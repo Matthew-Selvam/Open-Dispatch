@@ -1,0 +1,22 @@
+services:
+  api:
+    build: .
+    container_name: open-dispatch-api
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+    command: ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  worker:
+    build: .
+    container_name: open-dispatch-worker
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/data
+    depends_on:
+      - api
+    command: ["python", "-m", "scheduler.worker"]
