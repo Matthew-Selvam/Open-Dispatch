@@ -1,14 +1,21 @@
-"""FastAPI app — POST /dispatch + status endpoints."""
+"""FastAPI app — JSON API + HTMX web UI (dashboard, composer)."""
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+from collections import Counter
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
+from adapters import ADAPTERS
 from api.queue import get_queue
 from api.schema import ContentUnit, parse_target, validate
 
@@ -18,16 +25,72 @@ logging.basicConfig(
 )
 log = logging.getLogger("open-dispatch.api")
 
+VERSION = "0.2.0"
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+TEMPLATES_DIR = REPO_ROOT / "web" / "templates"
+STATIC_DIR = REPO_ROOT / "web" / "static"
+
 app = FastAPI(
     title="Open-Dispatch",
-    version="0.1.0",
+    version=VERSION,
     description="One API to dispatch content anywhere — open-source.",
+    docs_url="/docs",
+    redoc_url=None,
 )
 
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+# ─── Helpers ──────────────────────────────────────────────────────────────
+
+def _platforms_configured() -> set[str]:
+    """Which platforms have at least the canonical credential env var set?"""
+    checks = {
+        "telegram":  ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"),
+        "twitter":   ("TWITTER_API_KEY", "TWITTER_ACCESS_TOKEN"),
+        "instagram": ("IG_USER_ID", "IG_TOKEN"),
+        "bluesky":   ("BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD"),
+        "linkedin":  ("LINKEDIN_ACCESS_TOKEN", "LINKEDIN_AUTHOR_URN"),
+    }
+    return {
+        platform for platform, envs in checks.items()
+        if all(os.getenv(e) for e in envs)
+    }
+
+
+def _build_formats(text: str, formats_json: str | None) -> dict[str, Any]:
+    """Build per-platform formats dict from either raw JSON or a single text field."""
+    if formats_json and formats_json.strip():
+        try:
+            parsed = json.loads(formats_json)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError as e:
+            raise ValueError(f"formats_json: {e}") from e
+    # Default: use the text across the common format keys for every selected platform
+    return {
+        "telegram_message":  {"text": text},
+        "twitter_thread":    {"tweets": [text]},
+        "bluesky_post":      {"text": text},
+        "instagram_post":    {"caption": text},
+        "linkedin_post":     {"text": text},
+        "threads_post":      {"text": text},
+    }
+
+
+def _wants_html(request: Request) -> bool:
+    """Heuristic — does this request expect HTML (browser) vs JSON (API)?"""
+    accept = request.headers.get("accept", "")
+    return "text/html" in accept or "hx-request" in {k.lower() for k in request.headers}
+
+
+# ─── JSON API (unchanged) ─────────────────────────────────────────────────
 
 @app.get("/healthz")
 def healthz() -> dict[str, Any]:
-    return {"status": "ok", "version": app.version}
+    return {"status": "ok", "version": VERSION}
 
 
 @app.post("/dispatch", status_code=202)
@@ -59,8 +122,8 @@ def list_queue(status: str | None = None) -> dict[str, Any]:
     return {"count": len(rows), "rows": rows}
 
 
-@app.get("/queue/{row_id}")
-def get_row(row_id: str) -> dict[str, Any]:
+@app.get("/queue/{row_id}/json")
+def get_row_json(row_id: str) -> dict[str, Any]:
     row = get_queue().get(row_id)
     if not row:
         raise HTTPException(status_code=404, detail="not found")
@@ -68,10 +131,171 @@ def get_row(row_id: str) -> dict[str, Any]:
 
 
 @app.post("/queue/{row_id}/retry")
-def retry_row(row_id: str) -> dict[str, Any]:
+async def retry_row(request: Request, row_id: str) -> Any:
     q = get_queue()
     row = q.get(row_id)
     if not row:
         raise HTTPException(status_code=404, detail="not found")
     q._update(row_id, {"status": "queued", "last_error": None})  # noqa: SLF001
+    if _wants_html(request):
+        # HTMX caller: re-render the queue fragment
+        return await _render_queue_fragment(request, status=None)
     return {"id": row_id, "status": "queued"}
+
+
+# ─── Web UI ────────────────────────────────────────────────────────────────
+
+def _row_counts(rows: list[dict]) -> dict[str, int]:
+    counts: dict[str, int] = Counter(r.get("status", "") for r in rows)
+    counts["all"] = len(rows)
+    return counts
+
+
+async def _render_queue_fragment(request: Request, status: str | None) -> HTMLResponse:
+    rows = get_queue().list_all(status=status)
+    rows.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+    return templates.TemplateResponse(
+        request, "_queue_table.html",
+        {"rows": rows, "filter_status": status},
+    )
+
+
+@app.get("/", response_class=HTMLResponse)
+async def dashboard(request: Request, status: str | None = None) -> HTMLResponse:
+    all_rows = get_queue().list_all()
+    rows = [r for r in all_rows if not status or r.get("status") == status]
+    rows.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+    return templates.TemplateResponse(
+        request, "dashboard.html",
+        {
+            "rows": rows,
+            "counts": _row_counts(all_rows),
+            "filter_status": status,
+            "active": "dashboard",
+            "version": VERSION,
+            "now": datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        },
+    )
+
+
+@app.get("/_queue-fragment", response_class=HTMLResponse)
+async def queue_fragment(request: Request, status: str | None = None) -> HTMLResponse:
+    return await _render_queue_fragment(request, status)
+
+
+@app.get("/compose", response_class=HTMLResponse)
+async def compose_page(request: Request) -> HTMLResponse:
+    platforms = sorted(ADAPTERS.keys())
+    configured = _platforms_configured()
+    return templates.TemplateResponse(
+        request, "compose.html",
+        {
+            "platforms": platforms,
+            "configured": configured,
+            "active": "compose",
+            "version": VERSION,
+            "now": datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        },
+    )
+
+
+@app.post("/_compose", response_class=HTMLResponse)
+async def compose_submit(
+    request: Request,
+    text: str = Form(""),
+    platforms: list[str] = Form(default=[]),
+    targets_override: str = Form(""),
+    scheduled_for: str = Form(""),
+    webhook_url: str = Form(""),
+    formats_json: str = Form(""),
+) -> HTMLResponse:
+    errors: list[str] = []
+    targets: list[str] = []
+    if targets_override.strip():
+        targets = [t.strip() for t in targets_override.split(",") if t.strip()]
+    else:
+        targets = [p for p in platforms if p]
+    if not targets:
+        errors.append("pick at least one platform or enter override targets")
+    if not text and not formats_json:
+        errors.append("text or formats_json is required")
+
+    try:
+        formats = _build_formats(text, formats_json or None)
+    except ValueError as e:
+        errors.append(str(e))
+        formats = {}
+
+    if errors:
+        return templates.TemplateResponse(
+            request, "_compose_result.html",
+            {"ok": False, "errors": errors},
+        )
+
+    unit = ContentUnit.from_dict({
+        "category": "web",
+        "targets": targets,
+        "scheduled_for": scheduled_for.strip() or None,
+        "formats": formats,
+        "webhook_url": webhook_url.strip() or None,
+    })
+    errs = validate(unit)
+    if errs:
+        return templates.TemplateResponse(
+            request, "_compose_result.html",
+            {"ok": False, "errors": errs},
+        )
+
+    q = get_queue()
+    sf = unit.scheduled_for or datetime.now(tz=timezone.utc).isoformat()
+    enqueued = []
+    for target in unit.targets:
+        platform, account = parse_target(target)
+        key = f"{platform}:{account or 'default'}"
+        row_id = q.enqueue(unit.to_dict(), key, sf)
+        enqueued.append({"id": row_id, "target": target, "scheduled_for": sf})
+
+    return templates.TemplateResponse(
+        request, "_compose_result.html",
+        {"ok": True, "unit_id": unit.id, "enqueued": enqueued},
+    )
+
+
+@app.get("/queue/{row_id}")
+async def row_detail(request: Request, row_id: str) -> Any:
+    """Content-negotiated: HTML for browsers, JSON for API consumers.
+
+    Browsers send `Accept: text/html,...`, curl/SDKs send `*/*` or
+    `application/json`. We return HTML only when the client clearly
+    prefers it so we don't break existing API consumers.
+    """
+    row = get_queue().get(row_id)
+    wants_html = _wants_html(request)
+    if not row:
+        if wants_html:
+            return HTMLResponse(
+                "<h1>404 — row not found</h1>"
+                f"<p>No queue row with id <code>{row_id}</code>.</p>"
+                "<p><a href='/'>Back to dashboard</a></p>",
+                status_code=404,
+            )
+        raise HTTPException(status_code=404, detail="not found")
+    if wants_html:
+        return templates.TemplateResponse(
+            request, "row_detail.html",
+            {
+                "row": row,
+                "unit_json": json.dumps(row.get("unit", {}), indent=2, ensure_ascii=False),
+                "active": "dashboard",
+                "version": VERSION,
+                "now": datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            },
+        )
+    # Default to JSON for API consumers (back-compat with the documented contract)
+    return row
+
+
+# Redirect bare /queue (GET) to dashboard when called from a browser
+@app.get("/queue/", response_class=HTMLResponse, include_in_schema=False)
+async def queue_redirect() -> RedirectResponse:
+    return RedirectResponse(url="/", status_code=307)

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Compose · Open-Dispatch{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Compose</h1>
+    <p class="subtitle">Send one piece of content to multiple platforms.</p>
+  </div>
+</div>
+
+<form id="compose-form"
+      hx-post="/_compose"
+      hx-target="#compose-result"
+      hx-swap="innerHTML"
+      class="compose-form">
+
+  <div class="field">
+    <label>Platforms</label>
+    <div class="checkbox-grid">
+      {% for p in platforms %}
+        <label class="check">
+          <input type="checkbox" name="platforms" value="{{ p }}"
+                 {% if p == 'telegram' %}checked{% endif %} />
+          <span>{{ p }}</span>
+          {% if p in configured %}<span class="dot-green" title="creds present"></span>{% endif %}
+        </label>
+      {% endfor %}
+    </div>
+    <p class="hint">Account suffix: type <code>twitter:work</code> in the box below to override.</p>
+  </div>
+
+  <div class="field">
+    <label>Override targets (optional)</label>
+    <input type="text" name="targets_override"
+           placeholder="e.g. twitter:work,bluesky:personal" class="input" />
+  </div>
+
+  <div class="field">
+    <label>Text / caption</label>
+    <textarea name="text" rows="4" required class="input mono"
+              placeholder="Type your post…"></textarea>
+    <p class="hint">Same text used for every platform unless overridden in JSON below.</p>
+  </div>
+
+  <div class="row-2">
+    <div class="field">
+      <label>Schedule for (optional, ISO-8601)</label>
+      <input type="text" name="scheduled_for" class="input mono"
+             placeholder="2026-05-20T19:00:00+00:00" />
+    </div>
+    <div class="field">
+      <label>Webhook URL (optional)</label>
+      <input type="url" name="webhook_url" class="input mono"
+             placeholder="https://your-app.example/dispatch-cb" />
+    </div>
+  </div>
+
+  <details class="advanced">
+    <summary>Advanced — raw formats JSON</summary>
+    <p class="hint small">
+      Overrides the text field. Use to attach images, set parse_mode, build threads, etc.
+      See <a href="https://github.com/matthewselvam/open-dispatch#contentunit-shape" target="_blank">README</a>.
+    </p>
+    <textarea name="formats_json" rows="8" class="input mono small"
+              placeholder='{"twitter_thread": {"tweets": ["…","…"]}, "bluesky_post": {"text": "…"}}'></textarea>
+  </details>
+
+  <div class="actions">
+    <button type="submit" class="btn btn-primary">Dispatch →</button>
+    <a href="/" class="btn btn-ghost">Cancel</a>
+  </div>
+</form>
+
+<div id="compose-result"></div>
+{% endblock %}
