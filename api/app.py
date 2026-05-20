@@ -53,6 +53,7 @@ def _platforms_configured() -> set[str]:
         "instagram": ("IG_USER_ID", "IG_TOKEN"),
         "bluesky":   ("BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD"),
         "linkedin":  ("LINKEDIN_ACCESS_TOKEN", "LINKEDIN_AUTHOR_URN"),
+        "threads":   ("THREADS_USER_ID", "THREADS_ACCESS_TOKEN"),
     }
     return {
         platform for platform, envs in checks.items()

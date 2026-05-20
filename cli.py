@@ -54,6 +54,8 @@ def cmd_send(args: argparse.Namespace) -> int:
                     formats["linkedin_post"] = {"text": args.text}
                 elif plat == "instagram":
                     formats["instagram_post"] = {"caption": args.text}
+                elif plat == "threads":
+                    formats["threads_post"] = {"text": args.text}
         unit = ContentUnit(targets=targets, formats=formats,
                            scheduled_for=args.at,
                            webhook_url=args.webhook)

@@ -6,7 +6,7 @@ from typing import Protocol
 
 from api.schema import ContentUnit
 
-from . import bluesky, instagram, linkedin, telegram, twitter
+from . import bluesky, instagram, linkedin, telegram, threads, twitter
 
 
 class Adapter(Protocol):
@@ -19,4 +19,5 @@ ADAPTERS: dict[str, Adapter] = {
     "instagram": instagram,
     "bluesky": bluesky,
     "linkedin": linkedin,
+    "threads": threads,
 }
