@@ -9,6 +9,7 @@ services:
     volumes:
       - ./data:/data
     command: ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+    # No `depends_on: redis` — Redis is opt-in via REDIS_URL.
 
   worker:
     build: .
@@ -20,3 +21,16 @@ services:
     depends_on:
       - api
     command: ["python", "-m", "scheduler.worker"]
+
+  # Optional — only used when REDIS_URL points here in .env.
+  # Comment out if you want pure JSONL self-host.
+  redis:
+    image: redis:7-alpine
+    container_name: open-dispatch-redis
+    restart: unless-stopped
+    profiles: ["redis"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+    command: ["redis-server", "--appendonly", "yes"]

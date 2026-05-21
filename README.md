@@ -147,7 +147,7 @@ That's the whole integration surface.
                                           webhook_url
 ```
 
-- **Queue**: JSONL on disk by default (single file, append-safe, atomic rewrite for updates). Redis+RQ stub lives in `api/queue.py:get_queue` — drop it in when you outgrow JSONL.
+- **Queue**: JSONL on disk by default (single file, append-safe, atomic rewrite for updates). Set `REDIS_URL` in `.env` to switch to the Redis backend — multi-worker safe, `dispatch:row:<id>` strings + a ZSET for due queries. Bring up the bundled Redis service with `docker compose --profile redis up -d`. Both backends implement the same `QueueProtocol` — no API or worker changes needed to swap.
 - **Retry**: exponential backoff (`WORKER_BACKOFF_BASE * 2^(attempts-1)` + jitter), gives up after `WORKER_MAX_ATTEMPTS`.
 - **State**: `queued → publishing → published | failed | dead`. Failed rows are re-queued with a future `scheduled_for`. Dead rows stay for inspection.
 - **No-cloud option**: everything runs from one `python` process if you `python cli.py worker` alongside `uvicorn`.
@@ -198,8 +198,8 @@ The web composer has an **✦ Adapt with AI** button that previews per-platform 
 - [x] **AI caption-adaptation per platform** (OpenRouter / Ollama / heuristic fallback)
 - [x] **YouTube Shorts adapter** (Data API v3 resumable upload, OAuth2 refresh-token flow)
 - [ ] TikTok adapter (Content Posting API once approved)
-- [ ] Redis + RQ backend
-- [ ] Postgres queue (for >1 worker)
+- [x] **Redis queue backend** (set `REDIS_URL` to opt in — multi-worker safe, includes `docker compose --profile redis`)
+- [ ] Postgres queue (for cross-region multi-worker)
 - [ ] Media transcoding (resize per platform spec)
 - [x] **n8n community node** (`n8n-node/` — Dispatch / Adapt / Get Row / Retry / List Queue)
 
