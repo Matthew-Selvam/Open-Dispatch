@@ -1,7 +1,7 @@
 # Open-Dispatch
 
 > **One API to dispatch your content anywhere.**
-> Twitter / X, Instagram, Telegram, Bluesky, LinkedIn, Threads — self-host free, source-available.
+> Twitter / X, Instagram, Telegram, Bluesky, LinkedIn, Threads, YouTube Shorts — self-host free, source-available.
 
 Open-Dispatch is the **infrastructure layer** for content distribution. Like Stripe is to payments, this is to posting. Integrate it from any app, n8n workflow, cron job, or AI agent: one HTTP call, every platform.
 
@@ -190,14 +190,14 @@ The web composer has an **✦ Adapt with AI** button that previews per-platform 
 
 ## Roadmap
 
-- [x] Twitter / X, Instagram, Telegram, Bluesky, LinkedIn adapters
+- [x] Twitter / X, Instagram, Telegram, Bluesky, LinkedIn, Threads, YouTube Shorts adapters
 - [x] JSONL queue, exponential retry, webhooks
 - [x] Docker compose self-host
 - [x] **Web UI** (HTMX + Jinja, dark theme — dashboard, composer, retry, row detail, live auto-refresh)
 - [x] **Threads adapter** (Meta Threads Graph API — text / image / video posts)
 - [x] **AI caption-adaptation per platform** (OpenRouter / Ollama / heuristic fallback)
+- [x] **YouTube Shorts adapter** (Data API v3 resumable upload, OAuth2 refresh-token flow)
 - [ ] TikTok adapter (Content Posting API once approved)
-- [ ] YouTube Shorts adapter
 - [ ] Redis + RQ backend
 - [ ] Postgres queue (for >1 worker)
 - [ ] Media transcoding (resize per platform spec)

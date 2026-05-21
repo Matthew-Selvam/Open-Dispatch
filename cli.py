@@ -56,6 +56,11 @@ def cmd_send(args: argparse.Namespace) -> int:
                     formats["instagram_post"] = {"caption": args.text}
                 elif plat == "threads":
                     formats["threads_post"] = {"text": args.text}
+                elif plat == "youtube":
+                    # YouTube needs a video_path — text-only CLI mode can't
+                    # supply one. Use `dispatch send --file unit.json` for
+                    # real YouTube uploads.
+                    formats["youtube_short"] = {"caption": args.text}
         unit = ContentUnit(targets=targets, formats=formats,
                            scheduled_for=args.at,
                            webhook_url=args.webhook)

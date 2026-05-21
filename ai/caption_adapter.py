@@ -104,6 +104,17 @@ PLATFORM_SPECS: dict[str, dict[str, Any]] = {
         ),
         "schema": "{ \"text\": \"<=500 chars\" }",
     },
+    "youtube": {
+        "format_key": "youtube_short",
+        "max_chars": 5000,
+        "style": (
+            "Generate a title (<=100 chars) and a description (<=5000 chars). "
+            "Title should be a hook. Description can be longer with context, "
+            "credits, and 3-7 relevant hashtags at the end. Always include "
+            "#Shorts in the description so YouTube classifies correctly."
+        ),
+        "schema": "{ \"title\": \"<=100\", \"description\": \"<=5000 incl #Shorts\" }",
+    },
 }
 
 
@@ -167,6 +178,16 @@ def _heuristic_adapt(source: str, platform: str) -> dict[str, Any]:
         tag_line = " ".join(existing_tags[:12])
         caption = (body + ("\n\n" + tag_line if tag_line else "")).strip()
         return {"caption": _truncate(caption, limit)}
+
+    if platform == "youtube":
+        # Title = first sentence or first 100 chars
+        first_sentence = re.split(r"(?<=[.!?])\s+", clean, 1)[0]
+        title = _truncate(first_sentence, 100)
+        description = clean
+        if "#shorts" not in clean.lower():
+            description = (description + "\n\n#Shorts").strip()
+        description = _truncate(description, limit)
+        return {"title": title, "description": description}
 
     # Unknown platform — return source as-is in a generic shape
     return {"text": _truncate(clean, limit)}
@@ -318,6 +339,10 @@ def _enforce_limits(adapted: dict[str, Any]) -> dict[str, Any]:
         elif fk == "instagram_post":
             cap = block.get("caption") or ""
             out[fk] = {"caption": _truncate(cap, limit)}
+        elif fk == "youtube_short":
+            title = (block.get("title") or "").strip()[:100]
+            desc = block.get("description") or ""
+            out[fk] = {"title": title, "description": _truncate(desc, limit)}
         else:
             txt = block.get("text") or ""
             out[fk] = {"text": _truncate(txt, limit)}
