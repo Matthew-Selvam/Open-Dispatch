@@ -15,6 +15,7 @@ dependencies = [
     "atproto>=0.0.50",
     "jinja2>=3.1",
     "python-multipart>=0.0.20",
+    "Pillow>=10",
 ]
 
 [project.optional-dependencies]
@@ -32,7 +33,7 @@ build-backend = "setuptools.build_meta"
 py-modules = ["cli"]
 
 [tool.setuptools.packages.find]
-include = ["api*", "adapters*", "scheduler*", "ai*"]
+include = ["api*", "adapters*", "scheduler*", "ai*", "media*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

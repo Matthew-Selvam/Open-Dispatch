@@ -173,6 +173,26 @@ npm install --ignore-scripts && npm run build
 
 The credential just needs your Open-Dispatch base URL (plus an optional bearer if you front it with auth).
 
+## Media transcoding
+
+Per-platform image resize via Pillow — Instagram square, IG Reels portrait, Twitter 16:9, LinkedIn share, YouTube Shorts cover, etc. 10 platform specs out of the box. Honors EXIF orientation, flattens RGBA to JPEG, never upscales.
+
+```bash
+# REST: transcode a Twitter card from a phone photo
+curl -X POST "http://localhost:8000/media/transcode?platform=twitter" \
+  -H "Content-Type: image/jpeg" \
+  --data-binary @photo.jpg --output photo.twitter.jpg
+
+# Inspect the spec for any platform
+curl http://localhost:8000/media/specs | jq .twitter
+```
+
+Python:
+```python
+from media import transcode_image
+transcode_image("photo.jpg", "instagram")  # → photo.instagram.jpg
+```
+
 ## AI caption adapter
 
 One source caption → per-platform posts. Respects character limits, style conventions (Twitter punchy, LinkedIn formal, Instagram hashtag-heavy), and falls back to a heuristic when no LLM is configured (so the endpoint never 500s on missing creds).
@@ -200,7 +220,8 @@ The web composer has an **✦ Adapt with AI** button that previews per-platform 
 - [ ] TikTok adapter (Content Posting API once approved)
 - [x] **Redis queue backend** (set `REDIS_URL` to opt in — multi-worker safe, includes `docker compose --profile redis`)
 - [ ] Postgres queue (for cross-region multi-worker)
-- [ ] Media transcoding (resize per platform spec)
+- [x] **Media transcoding** (per-platform image resize via Pillow — 10 specs, REST endpoint, Python API)
+- [ ] Video transcoding (ffmpeg-backed, future)
 - [x] **n8n community node** (`n8n-node/` — Dispatch / Adapt / Get Row / Retry / List Queue)
 
 ## Tests

@@ -19,6 +19,7 @@ from adapters import ADAPTERS
 from ai import AdaptError, adapt_caption_async
 from api.queue import get_queue
 from api.schema import ContentUnit, parse_target, validate
+from media import PLATFORM_IMAGE_SPECS, TranscodeError, transcode_image_bytes
 
 logging.basicConfig(
     level=logging.INFO,
@@ -367,3 +368,63 @@ async def compose_adapt_htmx(
         f'<pre class="mono small" style="margin-top:8px;max-height:300px;overflow:auto">{pretty}</pre>'
         "</div>",
     )
+
+
+# ─── Media transcoding ────────────────────────────────────────────────────
+
+@app.get("/media/specs")
+def media_specs() -> dict[str, Any]:
+    """Return the per-platform image-spec table so clients can introspect
+    what we'll do to their images before they upload."""
+    return {
+        name: {
+            "max_width": spec.max_width,
+            "max_height": spec.max_height,
+            "aspect_min": spec.aspect_min,
+            "aspect_max": spec.aspect_max,
+            "format": spec.format,
+            "quality": spec.quality,
+            "description": spec.description,
+        }
+        for name, spec in PLATFORM_IMAGE_SPECS.items()
+    }
+
+
+@app.post("/media/transcode")
+async def media_transcode(request: Request) -> Any:
+    """Transcode raw image bytes for one platform spec.
+
+    Two ways to call:
+    1. Raw body: `Content-Type: image/<anything>`, body = image bytes,
+       query param `?platform=instagram` — returns the transcoded JPEG bytes
+       directly with Content-Type: image/jpeg.
+    2. multipart/form-data with fields `image` (file) and `platform` — same response.
+    """
+    from fastapi.responses import Response
+    platform = request.query_params.get("platform", "")
+    blob: bytes | None = None
+
+    content_type = (request.headers.get("content-type") or "").lower()
+    if content_type.startswith("multipart/form-data"):
+        form = await request.form()
+        platform = platform or str(form.get("platform", ""))
+        upload = form.get("image")
+        if upload is None:
+            raise HTTPException(status_code=400, detail="multipart: missing 'image' field")
+        blob = await upload.read()  # type: ignore[union-attr]
+    else:
+        blob = await request.body()
+
+    if not platform:
+        raise HTTPException(status_code=400, detail="platform query param required")
+    if not blob:
+        raise HTTPException(status_code=400, detail="empty image body")
+
+    try:
+        out = transcode_image_bytes(blob, platform)
+    except TranscodeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    spec = PLATFORM_IMAGE_SPECS[platform]
+    mime = "image/jpeg" if spec.format == "JPEG" else "image/png"
+    return Response(content=out, media_type=mime)
