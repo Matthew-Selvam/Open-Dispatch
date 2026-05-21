@@ -152,6 +152,21 @@ That's the whole integration surface.
 - **State**: `queued → publishing → published | failed | dead`. Failed rows are re-queued with a future `scheduled_for`. Dead rows stay for inspection.
 - **No-cloud option**: everything runs from one `python` process if you `python cli.py worker` alongside `uvicorn`.
 
+## AI caption adapter
+
+One source caption → per-platform posts. Respects character limits, style conventions (Twitter punchy, LinkedIn formal, Instagram hashtag-heavy), and falls back to a heuristic when no LLM is configured (so the endpoint never 500s on missing creds).
+
+```bash
+curl -X POST http://localhost:8000/ai/adapt -H "Content-Type: application/json" -d '{
+  "text": "Open-Dispatch v0.2: web UI, Threads, AI caption rewriter. Self-host free, MIT.",
+  "platforms": ["twitter", "bluesky", "linkedin", "instagram", "threads"]
+}'
+```
+
+Provider priority: **Ollama** (free + local) → **OpenRouter** (any model) → **heuristic** (no LLM). Set `OPENROUTER_API_KEY` to enable cloud, set `OLLAMA_HOST` to prefer local.
+
+The web composer has an **✦ Adapt with AI** button that previews per-platform rewrites before you dispatch.
+
 ## Roadmap
 
 - [x] Twitter / X, Instagram, Telegram, Bluesky, LinkedIn adapters
@@ -159,11 +174,11 @@ That's the whole integration surface.
 - [x] Docker compose self-host
 - [x] **Web UI** (HTMX + Jinja, dark theme — dashboard, composer, retry, row detail, live auto-refresh)
 - [x] **Threads adapter** (Meta Threads Graph API — text / image / video posts)
+- [x] **AI caption-adaptation per platform** (OpenRouter / Ollama / heuristic fallback)
 - [ ] TikTok adapter (Content Posting API once approved)
 - [ ] YouTube Shorts adapter
 - [ ] Redis + RQ backend
 - [ ] Postgres queue (for >1 worker)
-- [ ] AI caption-adaptation per platform (uses OpenRouter or local Ollama)
 - [ ] Media transcoding (resize per platform spec)
 - [ ] n8n node (official integration)
 

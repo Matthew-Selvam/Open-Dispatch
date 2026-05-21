@@ -56,6 +56,19 @@
     </div>
   </div>
 
+  <div class="field" style="margin-top:-4px">
+    <button type="button"
+            class="btn btn-ghost btn-mini"
+            hx-post="/_compose-adapt"
+            hx-include="closest form"
+            hx-target="#ai-preview"
+            hx-swap="innerHTML">
+      ✦ Adapt with AI (preview per platform)
+    </button>
+    <p class="hint">Rewrites the text above for each selected platform (limits, style, hashtags). Uses OpenRouter / Ollama / heuristic — whichever is configured.</p>
+    <div id="ai-preview"></div>
+  </div>
+
   <details class="advanced">
     <summary>Advanced — raw formats JSON</summary>
     <p class="hint small">

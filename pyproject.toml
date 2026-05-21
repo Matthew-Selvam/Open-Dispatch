@@ -31,7 +31,7 @@ build-backend = "setuptools.build_meta"
 py-modules = ["cli"]
 
 [tool.setuptools.packages.find]
-include = ["api*", "adapters*", "scheduler*"]
+include = ["api*", "adapters*", "scheduler*", "ai*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from adapters import ADAPTERS
+from ai import AdaptError, adapt_caption_async
 from api.queue import get_queue
 from api.schema import ContentUnit, parse_target, validate
 
@@ -300,3 +301,66 @@ async def row_detail(request: Request, row_id: str) -> Any:
 @app.get("/queue/", response_class=HTMLResponse, include_in_schema=False)
 async def queue_redirect() -> RedirectResponse:
     return RedirectResponse(url="/", status_code=307)
+
+
+# ─── AI caption adaptation ────────────────────────────────────────────────
+
+@app.post("/ai/adapt")
+async def ai_adapt(request: Request) -> dict[str, Any]:
+    """Adapt a source caption into per-platform formats.
+
+    Request body:
+      { "text": "...", "platforms": ["twitter","bluesky",...], "provider": "openrouter"|"ollama"|"heuristic" }
+
+    Response:
+      { "ok": true, "formats": {...}, "provider": "openrouter" }
+
+    Provider defaults: ollama if OLLAMA_HOST set, else openrouter if
+    OPENROUTER_API_KEY set, else heuristic (no LLM).
+    """
+    body = await request.json()
+    text = (body.get("text") or "").strip()
+    platforms = body.get("platforms") or []
+    provider = body.get("provider")
+    if not text:
+        raise HTTPException(status_code=400, detail="text is required")
+    if not isinstance(platforms, list) or not platforms:
+        raise HTTPException(status_code=400, detail="platforms must be a non-empty list")
+
+    try:
+        formats = await adapt_caption_async(text, platforms, provider=provider)
+    except AdaptError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    return {"ok": True, "formats": formats}
+
+
+@app.post("/_compose-adapt", response_class=HTMLResponse)
+async def compose_adapt_htmx(
+    request: Request,
+    text: str = Form(""),
+    platforms: list[str] = Form(default=[]),
+) -> HTMLResponse:
+    """HTMX endpoint: takes the in-progress composer text + selected platforms,
+    returns a JSON formats blob to drop into the Advanced textarea.
+    """
+    if not text.strip() or not platforms:
+        return HTMLResponse(
+            '<div class="alert alert-error">'
+            "<strong>Need text and at least one platform.</strong>"
+            "</div>",
+        )
+    try:
+        formats = await adapt_caption_async(text, platforms)
+    except AdaptError as e:
+        return HTMLResponse(
+            f'<div class="alert alert-error"><strong>Adapt failed:</strong> {e}</div>',
+        )
+    pretty = json.dumps(formats, indent=2, ensure_ascii=False)
+    return HTMLResponse(
+        '<div class="alert alert-success">'
+        "<strong>Adapted.</strong> Paste this into the Advanced JSON box "
+        "(or just submit — the adapter ran on the server side):"
+        f'<pre class="mono small" style="margin-top:8px;max-height:300px;overflow:auto">{pretty}</pre>'
+        "</div>",
+    )
