@@ -1,0 +1,56 @@
+{
+  "name": "n8n-nodes-open-dispatch",
+  "version": "0.1.0",
+  "description": "n8n community node for Open-Dispatch — dispatch content to Twitter, Bluesky, Telegram, Instagram, LinkedIn, Threads via one API call.",
+  "keywords": [
+    "n8n-community-node-package",
+    "open-dispatch",
+    "social",
+    "twitter",
+    "bluesky",
+    "telegram",
+    "instagram",
+    "linkedin",
+    "threads",
+    "cross-posting"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/matthewselvam/open-dispatch",
+  "author": {
+    "name": "Matthew Selvam"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/matthewselvam/open-dispatch.git",
+    "directory": "n8n-node"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc && cp nodes/OpenDispatch/opendispatch.svg dist/nodes/OpenDispatch/",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/OpenDispatchApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/OpenDispatch/OpenDispatch.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "n8n-workflow": "*",
+    "typescript": "^5.5"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
+}

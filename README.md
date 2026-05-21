@@ -152,6 +152,27 @@ That's the whole integration surface.
 - **State**: `queued → publishing → published | failed | dead`. Failed rows are re-queued with a future `scheduled_for`. Dead rows stay for inspection.
 - **No-cloud option**: everything runs from one `python` process if you `python cli.py worker` alongside `uvicorn`.
 
+## n8n integration
+
+Community node lives in [`n8n-node/`](./n8n-node). One node, five operations:
+
+| Operation | Endpoint | Purpose |
+|---|---|---|
+| Dispatch | `POST /dispatch` | Send content (now or scheduled) |
+| Adapt Caption with AI | `POST /ai/adapt` | Per-platform rewrite |
+| Get Queue Row | `GET /queue/{id}` | Fetch one row |
+| Retry Queue Row | `POST /queue/{id}/retry` | Re-queue a failed row |
+| List Queue | `GET /queue` | List rows by status |
+
+Build locally:
+```bash
+cd n8n-node
+npm install --ignore-scripts && npm run build
+# In your n8n install: npm link n8n-nodes-open-dispatch
+```
+
+The credential just needs your Open-Dispatch base URL (plus an optional bearer if you front it with auth).
+
 ## AI caption adapter
 
 One source caption → per-platform posts. Respects character limits, style conventions (Twitter punchy, LinkedIn formal, Instagram hashtag-heavy), and falls back to a heuristic when no LLM is configured (so the endpoint never 500s on missing creds).
@@ -180,7 +201,7 @@ The web composer has an **✦ Adapt with AI** button that previews per-platform 
 - [ ] Redis + RQ backend
 - [ ] Postgres queue (for >1 worker)
 - [ ] Media transcoding (resize per platform spec)
-- [ ] n8n node (official integration)
+- [x] **n8n community node** (`n8n-node/` — Dispatch / Adapt / Get Row / Retry / List Queue)
 
 ## Tests
 
