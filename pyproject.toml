@@ -21,6 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest>=8", "pytest-asyncio>=0.23"]
 redis = ["redis>=5.0"]
+postgres = ["psycopg2-binary>=2.9"]
 
 [project.scripts]
 dispatch = "cli:main"
