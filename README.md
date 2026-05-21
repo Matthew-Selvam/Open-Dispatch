@@ -219,7 +219,7 @@ The web composer has an **✦ Adapt with AI** button that previews per-platform 
 - [x] **YouTube Shorts adapter** (Data API v3 resumable upload, OAuth2 refresh-token flow)
 - [ ] TikTok adapter (Content Posting API once approved)
 - [x] **Redis queue backend** (set `REDIS_URL` to opt in — multi-worker safe, includes `docker compose --profile redis`)
-- [ ] Postgres queue (for cross-region multi-worker)
+- [x] **Postgres queue backend** (set `DATABASE_URL` to opt in — true ACID + SKIP LOCKED for cross-region multi-worker)
 - [x] **Media transcoding** (per-platform image resize via Pillow — 10 specs, REST endpoint, Python API)
 - [ ] Video transcoding (ffmpeg-backed, future)
 - [x] **n8n community node** (`n8n-node/` — Dispatch / Adapt / Get Row / Retry / List Queue)
