@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Default permissions are read-only — workflow doesn't need write access
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python ${{ matrix.python-version }} — tests + lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Run tests
+        run: pytest -q --tb=short
+
+  n8n-node:
+    name: n8n node — TypeScript build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: n8n-node/package.json
+
+      - name: Install (no native build scripts)
+        working-directory: n8n-node
+        run: npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Compile TypeScript
+        working-directory: n8n-node
+        run: npm run build
+
+      - name: Verify dist artifacts
+        working-directory: n8n-node
+        run: |
+          test -f dist/credentials/OpenDispatchApi.credentials.js
+          test -f dist/nodes/OpenDispatch/OpenDispatch.node.js
+          test -f dist/nodes/OpenDispatch/opendispatch.svg
+
+  docker:
+    name: Docker — image build smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: open-dispatch:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test — container boots + /healthz returns 200
+        run: |
+          docker run -d --name disp -p 8000:8000 open-dispatch:ci
+          # Give uvicorn a few seconds to start
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -sf http://127.0.0.1:8000/healthz > /dev/null; then
+              echo "✓ healthz responded"
+              docker logs disp
+              docker rm -f disp
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "✘ healthz never responded"
+          docker logs disp
+          docker rm -f disp
+          exit 1
