@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useState } from "react";
 
 const GITHUB = "https://github.com/Matthew-Selvam/Open-Dispatch";
+const DMG_URL  = "https://github.com/Matthew-Selvam/Open-Dispatch/releases/latest/download/Open-Dispatch-0.4.0.dmg";
+// TODO: replace with your actual Docker walkthrough video once uploaded
+const DOCKER_VIDEO_URL = "https://www.youtube.com/watch?v=TODO";
 
 const PLATFORMS = [
   { name: "Twitter / X",    icon: "𝕏" },
@@ -27,10 +30,19 @@ const FEATURES = [
 // ── install methods ────────────────────────────────────────────────────────────
 type InstallKey = "brew" | "curl" | "docker" | "pip" | "dmg";
 
-const INSTALL: Record<InstallKey, { label: string; icon: string; snippet: string; note?: string }> = {
+const INSTALL: Record<InstallKey, {
+  label:   string;
+  icon:    string;
+  time:    string;   // setup time, shown under label
+  needs:   string;   // requirement, shown under label
+  snippet: string;
+  note?:   string;
+}> = {
   brew: {
-    label: "Homebrew",
-    icon: "🍺",
+    label:   "Homebrew",
+    icon:    "🍺",
+    time:    "~2 min",
+    needs:   "macOS",
     snippet:
 `# Add the tap (formula lives in the main repo)
 brew tap matthew-selvam/open-dispatch \\
@@ -43,13 +55,16 @@ $EDITOR ~/.open-dispatch/.env
 # Start (foreground)
 open-dispatch
 
-# Or run as a background service (auto-starts on login)
+# Or run as a background service — auto-starts on login
 brew services start open-dispatch`,
     note: "Installs dispatch + open-dispatch + open-dispatch-worker. brew services wires launchd so it starts at login.",
   },
+
   curl: {
-    label: "install.sh",
-    icon: "⬇️",
+    label:   "install.sh",
+    icon:    "⬇️",
+    time:    "~90s",
+    needs:   "macOS & Linux",
     snippet:
 `curl -fsSL \\
   https://raw.githubusercontent.com/Matthew-Selvam/Open-Dispatch/main/install.sh \\
@@ -68,9 +83,12 @@ launchctl load ~/Library/LaunchAgents/dev.open-dispatch.plist
 systemctl --user enable --now open-dispatch`,
     note: "Works on macOS (14+) and Linux. Writes a launchd plist or systemd user unit automatically.",
   },
+
   docker: {
-    label: "Docker",
-    icon: "🐳",
+    label:   "Docker",
+    icon:    "🐳",
+    time:    "~60s",
+    needs:   "Any platform",
     snippet:
 `git clone https://github.com/Matthew-Selvam/Open-Dispatch
 cd Open-Dispatch
@@ -87,9 +105,12 @@ open http://localhost:8000
 docker compose --profile redis up -d`,
     note: "Zero Python setup required. Multi-arch image (amd64 + arm64). Bundled Redis profile for scaling.",
   },
+
   pip: {
-    label: "pip",
-    icon: "🐍",
+    label:   "pip",
+    icon:    "🐍",
+    time:    "Instant",
+    needs:   "Python 3.11+",
     snippet:
 `# Install from GitHub (PyPI publish pending)
 pip install git+https://github.com/Matthew-Selvam/Open-Dispatch.git
@@ -108,28 +129,68 @@ python -m scheduler.worker
 dispatch send --platforms bluesky --text "hello world"`,
     note: "Best for Python developers who want to integrate Open-Dispatch into existing code.",
   },
+
   dmg: {
-    label: "macOS App",
-    icon: "🍎",
-    snippet:
-`# 1. Download Open-Dispatch-0.4.0.dmg from GitHub Releases:
-#    https://github.com/Matthew-Selvam/Open-Dispatch/releases
-
-# 2. Drag Open-Dispatch.app to /Applications
-
-# 3. Launch — a status icon appears in your menu bar
-#    Click → Edit .env → add your platform credentials
-#    Click → Start Server
-#    Click → Open Dashboard → http://localhost:8000
-
-# Build it yourself:
-bash scripts/make-dmg.sh
-# → dist/Open-Dispatch-0.4.0.dmg`,
-    note: "SwiftUI menubar app. Bundles the Python server — no separate Python install needed. macOS 13+.",
+    label:   "macOS App",
+    icon:    "🍎",
+    time:    "10s",
+    needs:   "macOS 13+",
+    snippet: "", // unused — DownloadPane renders instead
+    note:    "SwiftUI menubar app. Bundles the Python server — no separate Python install needed. macOS 13+.",
   },
 };
 
 const INSTALL_ORDER: InstallKey[] = ["brew", "curl", "docker", "pip", "dmg"];
+
+const FAQS = [
+  {
+    q: "Which install method should I use?",
+    a: (
+      <>
+        On macOS the quickest path is the{" "}
+        <a href="#install" className="underline underline-offset-2 hover:text-[var(--color-fg)]">macOS App</a>
+        {" "}— one download, drag to /Applications, done. If you prefer the terminal,{" "}
+        <a href="#install" className="underline underline-offset-2 hover:text-[var(--color-fg)]">Homebrew</a>
+        {" "}gives you <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">brew services</code> for automatic startup at login.
+      </>
+    ),
+  },
+  {
+    q: "How do I self-host on a Linux server or VPS?",
+    a: (
+      <>
+        Docker is the cleanest option for Linux — zero Python setup, runs as a non-root user, and includes an optional Redis sidecar.{" "}
+        <Link
+          href={DOCKER_VIDEO_URL}
+          target="_blank" rel="noopener noreferrer"
+          className="underline underline-offset-2 hover:text-[var(--color-fg)]"
+        >
+          Watch the Docker setup walkthrough →
+        </Link>
+      </>
+    ),
+  },
+  {
+    q: "Is it really free?",
+    a: "Yes — MIT licensed. Your platform credentials never leave your own machine. There's no cloud component, no telemetry, and no account to create.",
+  },
+  {
+    q: "Can I add a new social platform?",
+    a: (
+      <>
+        Yes. The adapter contract is a single Python function — about 80 lines of code. See{" "}
+        <Link
+          href={`${GITHUB}/blob/main/CONTRIBUTING.md`}
+          target="_blank" rel="noopener noreferrer"
+          className="underline underline-offset-2 hover:text-[var(--color-fg)]"
+        >
+          CONTRIBUTING.md
+        </Link>
+        {" "}for a step-by-step guide. The worker handles retry, backoff, and webhooks automatically.
+      </>
+    ),
+  },
+];
 
 export default function Page() {
   const [activeInstall, setActiveInstall] = useState<InstallKey>("brew");
@@ -145,7 +206,7 @@ export default function Page() {
           <nav className="flex items-center gap-5 text-sm text-[var(--color-body)]">
             <a href="#install"   className="hover:text-[var(--color-fg)] transition-colors hidden sm:block">Install</a>
             <a href="#features"  className="hover:text-[var(--color-fg)] transition-colors hidden sm:block">Features</a>
-            <a href="#api"       className="hover:text-[var(--color-fg)] transition-colors hidden sm:block">API</a>
+            <a href="#faq"       className="hover:text-[var(--color-fg)] transition-colors hidden sm:block">FAQ</a>
             <Link
               href={GITHUB} target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1.5 rounded border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-fg)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] transition-colors"
@@ -245,7 +306,7 @@ export default function Page() {
               Five ways to install — pick what fits your stack.
             </p>
 
-            {/* tab strip */}
+            {/* tab strip — setup time + platform baked in */}
             <div className="flex flex-wrap gap-2 mb-6">
               {INSTALL_ORDER.map(key => {
                 const m = INSTALL[key];
@@ -254,13 +315,19 @@ export default function Page() {
                   <button
                     key={key}
                     onClick={() => setActiveInstall(key)}
-                    className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-all ${
+                    className={`flex flex-col items-start gap-0.5 rounded-lg border px-4 py-2.5 transition-all ${
                       active
                         ? "border-[var(--color-accent)] bg-[var(--color-accent-dim)] text-[var(--color-fg)]"
                         : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-body)] hover:border-[var(--color-fg)]"
                     }`}
                   >
-                    <span>{m.icon}</span> {m.label}
+                    <span className="flex items-center gap-2 text-sm font-medium">
+                      <span>{m.icon}</span>
+                      <span>{m.label}</span>
+                    </span>
+                    <span className={`text-[10px] font-normal pl-[22px] ${active ? "text-[var(--color-body)]" : "text-[var(--color-muted)]"}`}>
+                      {m.time} · {m.needs}
+                    </span>
                   </button>
                 );
               })}
@@ -276,43 +343,20 @@ export default function Page() {
                   {INSTALL[activeInstall].icon} {INSTALL[activeInstall].label}
                 </span>
               </div>
-              <pre className="overflow-x-auto p-5 text-xs font-mono leading-relaxed text-[var(--color-body)] whitespace-pre">
-                {INSTALL[activeInstall].snippet}
-              </pre>
+
+              {activeInstall === "dmg" ? (
+                <DownloadPane />
+              ) : (
+                <pre className="overflow-x-auto p-5 text-xs font-mono leading-relaxed whitespace-pre">
+                  <HighlightedShell code={INSTALL[activeInstall].snippet} />
+                </pre>
+              )}
+
               {INSTALL[activeInstall].note && (
                 <div className="border-t border-[var(--color-border)] px-5 py-3 text-xs text-[var(--color-muted)]">
                   ℹ️ {INSTALL[activeInstall].note}
                 </div>
               )}
-            </div>
-
-            {/* comparison table */}
-            <div className="mt-8 overflow-x-auto rounded-xl border border-[var(--color-border)]">
-              <table className="w-full text-xs font-mono">
-                <thead>
-                  <tr className="bg-[var(--color-surface)] border-b border-[var(--color-border)]">
-                    {["Method","Setup","Needs","Best for"].map(h => (
-                      <th key={h} className="px-4 py-2.5 text-left text-[var(--color-muted)] font-semibold uppercase tracking-wider text-[10px]">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--color-border)]">
-                  {[
-                    ["🍺 Homebrew",  "~2 min",  "macOS + Homebrew",    "macOS devs, brew services auto-start"],
-                    ["⬇️ install.sh", "~90s",    "bash + Python 3.11+", "Linux servers, scripts, CI"],
-                    ["🐳 Docker",    "~60s",     "Docker",              "Self-hosters, Linux VMs, zero Python"],
-                    ["🐍 pip",       "instant",  "Python 3.11+",        "Python devs, embedding in apps"],
-                    ["🍎 macOS App", "10s",      "macOS 13+",           "Non-technical users, menubar control"],
-                  ].map(([method, setup, needs, use]) => (
-                    <tr key={method} className="hover:bg-[var(--color-surface)] transition-colors">
-                      <td className="px-4 py-2.5 text-[var(--color-fg)]">{method}</td>
-                      <td className="px-4 py-2.5 text-[var(--color-body)]">{setup}</td>
-                      <td className="px-4 py-2.5 text-[var(--color-body)]">{needs}</td>
-                      <td className="px-4 py-2.5 text-[var(--color-muted)]">{use}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           </div>
         </section>
@@ -461,6 +505,21 @@ scheduler/worker.py
           </div>
         </section>
 
+        {/* ── FAQ ───────────────────────────────────────────────────────── */}
+        <section id="faq" className="border-b border-[var(--color-border)]">
+          <div className="mx-auto max-w-4xl px-6 py-20">
+            <h2 className="text-2xl font-bold tracking-tight mb-10">Frequently asked questions.</h2>
+            <div className="divide-y divide-[var(--color-border)]">
+              {FAQS.map((faq, i) => (
+                <div key={i} className="py-7 grid sm:grid-cols-[1fr_2fr] gap-4 sm:gap-10">
+                  <h3 className="text-sm font-semibold text-[var(--color-fg)] leading-snug">{faq.q}</h3>
+                  <p className="text-sm text-[var(--color-body)] leading-relaxed">{faq.a}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* ── FINAL CTA ─────────────────────────────────────────────────── */}
         <section>
           <div className="mx-auto max-w-6xl px-6 py-24 text-center">
@@ -510,6 +569,61 @@ scheduler/worker.py
 }
 
 /* ── helpers ──────────────────────────────────────────────────────────────── */
+
+/** Renders shell code with # comments visually dimmed */
+function HighlightedShell({ code }: { code: string }) {
+  return (
+    <>
+      {code.split("\n").map((line, i) => {
+        const isComment = line.trimStart().startsWith("#");
+        return (
+          <span key={i}>
+            <span className={isComment ? "text-[#4a5a6a]" : "text-[var(--color-body)]"}>
+              {line}
+            </span>
+            {"\n"}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+/** Download pane shown for the macOS App tab */
+function DownloadPane() {
+  return (
+    <div className="flex flex-col items-center justify-center py-14 px-6 text-center gap-6">
+      <div className="text-6xl select-none">🍎</div>
+      <div>
+        <p className="text-[var(--color-fg)] font-semibold text-lg">Open-Dispatch 0.4.0</p>
+        <p className="text-[var(--color-muted)] text-xs mt-1.5">
+          macOS 13 Ventura or later &nbsp;·&nbsp; Apple Silicon &amp; Intel
+        </p>
+      </div>
+      <a
+        href={DMG_URL}
+        className="inline-flex items-center gap-2 rounded bg-[var(--color-accent)] px-7 py-3 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
+      >
+        ↓ Download .dmg
+      </a>
+      <p className="text-xs text-[var(--color-muted)]">
+        Or{" "}
+        <a
+          href={`${GITHUB}/releases`}
+          target="_blank" rel="noopener noreferrer"
+          className="underline underline-offset-2 hover:text-[var(--color-fg)]"
+        >
+          browse all releases
+        </a>
+        {" "}· Build from source:{" "}
+        <code className="bg-[var(--color-bg)] px-1.5 py-0.5 rounded text-[10px]">
+          bash scripts/make-dmg.sh
+        </code>
+      </p>
+    </div>
+  );
+}
+
 function GridBg() {
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.04]"
