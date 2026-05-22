@@ -19,7 +19,7 @@ We're pre-1.0 — patch releases ship as new minor versions until we cut 1.0.
 
 Send vulnerability reports privately via one of:
 
-1. **GitHub private security advisories**: https://github.com/matthewselvam/open-dispatch/security/advisories/new
+1. **GitHub private security advisories**: https://github.com/Matthew-Selvam/Open-Dispatch/security/advisories/new
    (preferred — keeps everything in-platform and gives us a private discussion channel)
 2. **Direct email**: the maintainer email in the `pyproject.toml` author field.
 

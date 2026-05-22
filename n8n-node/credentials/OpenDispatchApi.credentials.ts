@@ -16,7 +16,7 @@ import {
 export class OpenDispatchApi implements ICredentialType {
   name = 'openDispatchApi';
   displayName = 'Open-Dispatch';
-  documentationUrl = 'https://github.com/matthewselvam/open-dispatch';
+  documentationUrl = 'https://github.com/Matthew-Selvam/Open-Dispatch';
   properties: INodeProperties[] = [
     {
       displayName: 'Base URL',

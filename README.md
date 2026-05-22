@@ -24,6 +24,21 @@ Or use the built-in dark dashboard at `http://localhost:8000/` — compose, sche
 
 ---
 
+## Why self-host?
+
+Hosted scheduling services charge **$3–6 per connected account**, gate analytics and inbox management behind paid tiers, and keep your OAuth tokens on their servers. Open-Dispatch runs on your own machine, stores nothing externally, and costs nothing beyond electricity.
+
+| | Hosted tools | Open-Dispatch |
+|---|---|---|
+| Pricing | Per-account fees that stack up | Self-host free — $0 forever |
+| Credentials | Live on their servers | Never leave your machine |
+| Errors | Fail silently or stay vague | Visible + retryable in the dashboard |
+| Inbox / analytics / X | Extra paid add-ons | All platforms included, no tiers |
+| Your data | Lingers after you cancel | You own the queue end-to-end |
+| Lock-in | Proprietary | MIT licensed — fork it any time |
+
+---
+
 ## Install
 
 Five ways to run Open-Dispatch. Pick what fits your stack.
@@ -222,11 +237,13 @@ Dark terminal aesthetic. HTMX-driven (no JS build step). 51 KB vendored `htmx.mi
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/healthz` | Liveness probe — returns `{"status":"ok"}` |
+| GET | `/healthz` | Liveness probe — JSON for monitors, HTML dashboard for browsers |
 | POST | `/dispatch` | Enqueue a ContentUnit for one or many platforms |
-| GET | `/queue?status=…` | List rows (`queued / publishing / published / failed / dead`) |
+| GET | `/queue?status=…` | List rows (`queued / publishing / published / dead`) |
 | GET | `/queue/{id}` | One row — JSON or HTML (content-negotiated) |
-| POST | `/queue/{id}/retry` | Reset a failed / dead row to `queued` |
+| POST | `/queue/{id}/retry` | Reset an errored / dead row to `queued` |
+| DELETE | `/queue/{id}` | Delete a single queue row permanently |
+| POST | `/_purge?status=…` | Bulk-delete rows by status (`published` or `dead`) |
 | POST | `/ai/adapt` | Rewrite a caption per target platform |
 | POST | `/media/transcode` | Resize image to a platform spec |
 | GET | `/media/specs` | List all 10 platform image specs |
@@ -404,7 +421,7 @@ Provider priority: **Ollama** (free, local) → **OpenRouter** (any cloud model)
 
 ```bash
 pytest -q
-# 129 tests — schema, queue, API, and adapter coverage — no network, no real credentials
+# 135 tests — schema, queue, API, and adapter coverage — no network, no real credentials
 ```
 
 ---

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -146,6 +147,20 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     return args.func(args)
+
+
+def server() -> None:
+    """Entry point for `open-dispatch` — start the API + web UI server."""
+    import uvicorn
+    port = int(os.environ.get("PORT", "8000"))
+    host = os.environ.get("HOST", "0.0.0.0")
+    uvicorn.run("api.app:app", host=host, port=port)
+
+
+def worker() -> None:
+    """Entry point for `open-dispatch-worker` — run the scheduler worker."""
+    from scheduler.worker import main as worker_main
+    raise SystemExit(worker_main())
 
 
 if __name__ == "__main__":

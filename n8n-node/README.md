@@ -1,6 +1,6 @@
 # n8n-nodes-open-dispatch
 
-n8n community node for [Open-Dispatch](https://github.com/matthewselvam/open-dispatch).
+n8n community node for [Open-Dispatch](https://github.com/Matthew-Selvam/Open-Dispatch).
 
 ## What it does
 

@@ -274,7 +274,7 @@ async def _call_openrouter(system: str, user: str) -> str:
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
                 # OpenRouter recommends these for analytics
-                "HTTP-Referer": os.getenv("OPENROUTER_REFERER", "https://github.com/matthewselvam/open-dispatch"),
+                "HTTP-Referer": os.getenv("OPENROUTER_REFERER", "https://github.com/Matthew-Selvam/Open-Dispatch"),
                 "X-Title": "Open-Dispatch",
             },
             json={

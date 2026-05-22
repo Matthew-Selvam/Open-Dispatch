@@ -37,6 +37,8 @@ postgres = ["psycopg2-binary>=2.9"]
 
 [project.scripts]
 dispatch = "cli:main"
+open-dispatch = "cli:server"
+open-dispatch-worker = "cli:worker"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

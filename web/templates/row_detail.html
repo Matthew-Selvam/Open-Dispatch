@@ -11,10 +11,16 @@
     </p>
   </div>
   <div class="actions">
-    {% if row.status in ('failed','dead') %}
+    {% if row.status == 'dead' or (row.last_error and row.status != 'published') %}
     <form method="post" action="/queue/{{ row.id }}/retry" hx-post="/queue/{{ row.id }}/retry"
           hx-target="this" hx-swap="outerHTML">
       <button type="submit" class="btn btn-primary">Retry</button>
+    </form>
+    {% endif %}
+    {% if row.status in ('published', 'dead') %}
+    <form method="post" action="/queue/{{ row.id }}/delete" style="display:inline"
+          onsubmit="return confirm('Permanently delete this row?')">
+      <button type="submit" class="btn btn-ghost" style="color:var(--err)">Delete</button>
     </form>
     {% endif %}
     <a href="/" class="btn btn-ghost">← Dashboard</a>

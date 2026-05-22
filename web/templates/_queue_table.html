@@ -26,12 +26,21 @@
       </td>
       <td class="ta-right">
         <a href="/queue/{{ r.id }}" class="link-muted small">view</a>
-        {% if r.status in ('failed','dead') %}
+        {% if r.status == 'dead' or (r.last_error and r.status not in ('published', 'publishing')) %}
         <button class="btn btn-mini"
                 hx-post="/queue/{{ r.id }}/retry"
                 hx-target="#queue-table"
                 hx-swap="innerHTML"
                 hx-headers='{"Accept": "text/html"}'>retry</button>
+        {% endif %}
+        {% if r.status in ('published', 'dead') %}
+        <button class="btn btn-mini"
+                hx-post="/queue/{{ r.id }}/delete"
+                hx-target="#queue-table"
+                hx-swap="innerHTML"
+                hx-headers='{"Accept": "text/html"}'
+                hx-confirm="Delete this row?"
+                style="color:var(--err)">×</button>
         {% endif %}
       </td>
     </tr>

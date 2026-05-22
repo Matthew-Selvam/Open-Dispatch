@@ -27,6 +27,16 @@ const FEATURES = [
   { icon: "🔌", title: "n8n node",          body: "Native integration: Dispatch, Adapt, Get Row, Retry, List Queue — all 5 ops, zero JSON wiring." },
 ];
 
+// ── hosted-tool comparison ───────────────────────────────────────────────────────
+const COMPARE_POINTS = [
+  { icon: "💸", them: "Per-account fees that stack up fast",        us: "Self-host free — $0 forever" },
+  { icon: "🔒", them: "Your OAuth tokens live on their servers",    us: "Credentials never leave your machine" },
+  { icon: "🚨", them: "Failures vanish silently or stay vague",     us: "Every error is visible and retryable" },
+  { icon: "🧩", them: "Inbox, analytics & X gated behind add-ons",  us: "All platforms included, no tiers" },
+  { icon: "🗑️", them: "Data lingers after you cancel",             us: "Own your queue, own your data" },
+  { icon: "🔓", them: "Vendor lock-in",                            us: "MIT licensed — fork it any time" },
+];
+
 // ── install methods ────────────────────────────────────────────────────────────
 type InstallKey = "brew" | "curl" | "docker" | "pip" | "dmg";
 
@@ -200,9 +210,9 @@ export default function Page() {
       {/* ── NAV ─────────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-50 border-b border-[var(--color-border)] bg-[var(--color-bg)]/90 backdrop-blur">
         <div className="mx-auto max-w-6xl px-6 h-14 flex items-center justify-between">
-          <span className="font-mono text-sm font-semibold text-[var(--color-fg)] tracking-tight">
+          <Link href="/" className="font-mono text-sm font-semibold text-[var(--color-fg)] tracking-tight hover:opacity-80 transition-opacity" aria-label="Open-Dispatch home">
             open<span className="text-[var(--color-accent)]">-dispatch</span>
-          </span>
+          </Link>
           <nav className="flex items-center gap-5 text-sm text-[var(--color-body)]">
             <a href="#install"   className="hover:text-[var(--color-fg)] transition-colors hidden sm:block">Install</a>
             <a href="#features"  className="hover:text-[var(--color-fg)] transition-colors hidden sm:block">Features</a>
@@ -225,7 +235,7 @@ export default function Page() {
             <div>
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-xs font-mono text-[var(--color-body)]">
                 <span className="size-1.5 rounded-full bg-green-400 animate-pulse" />
-                v0.4.0 · MIT · 129 tests
+                v0.4.0 · MIT · 135 tests
               </div>
               <h1 className="font-sans text-5xl sm:text-6xl font-bold leading-[1.1] tracking-tight">
                 One API to{" "}
@@ -237,6 +247,9 @@ export default function Page() {
                 Open-source infrastructure for content distribution.
                 Like Stripe for payments — except for posting.
                 One HTTP call, seven platforms, zero vendor lock-in.
+              </p>
+              <p className="mt-3 text-sm font-medium text-[var(--color-fg)] max-w-lg">
+                No per-account fees. No paywalls. No vendor lock-in.
               </p>
               <div className="mt-5 flex flex-wrap gap-2">
                 {PLATFORMS.map(p => (
@@ -361,6 +374,51 @@ export default function Page() {
           </div>
         </section>
 
+        {/* ── WHY NOT HOSTED ────────────────────────────────────────────── */}
+        <section id="why" className="border-b border-[var(--color-border)]">
+          <div className="mx-auto max-w-5xl px-6 py-20">
+            <h2 className="text-2xl font-bold tracking-tight mb-2 text-center">
+              Why not just use a hosted scheduler?
+            </h2>
+            <p className="text-[var(--color-body)] mb-10 max-w-2xl mx-auto text-center text-sm">
+              Hosted tools rent you access to your own audience. Open-Dispatch hands you the keys.
+            </p>
+
+            <div className="rounded-xl border border-[var(--color-border)] overflow-hidden">
+              {/* header row */}
+              <div className="grid grid-cols-[auto_1fr_1fr] text-xs font-semibold uppercase tracking-wider">
+                <div className="px-4 py-3 bg-[var(--color-surface)] border-b border-[var(--color-border)]" />
+                <div className="px-4 py-3 bg-[var(--color-surface)] border-b border-l border-[var(--color-border)] text-[var(--color-muted)]">
+                  Hosted tools
+                </div>
+                <div className="px-4 py-3 bg-[var(--color-accent-dim)] border-b border-l border-[var(--color-border)] text-[var(--color-accent)]">
+                  Open-Dispatch
+                </div>
+              </div>
+
+              {/* rows */}
+              {COMPARE_POINTS.map((row, i) => (
+                <div
+                  key={i}
+                  className={`grid grid-cols-[auto_1fr_1fr] text-sm ${
+                    i < COMPARE_POINTS.length - 1 ? "border-b border-[var(--color-border)]" : ""
+                  }`}
+                >
+                  <div className="px-4 py-4 flex items-center text-xl select-none">{row.icon}</div>
+                  <div className="px-4 py-4 border-l border-[var(--color-border)] text-[var(--color-body)] flex items-start gap-2">
+                    <span className="text-red-400/80 shrink-0 mt-0.5">✗</span>
+                    <span>{row.them}</span>
+                  </div>
+                  <div className="px-4 py-4 border-l border-[var(--color-border)] bg-[var(--color-accent-dim)]/30 text-[var(--color-fg)] flex items-start gap-2">
+                    <span className="text-[var(--color-accent)] shrink-0 mt-0.5">✓</span>
+                    <span>{row.us}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* ── FEATURES ──────────────────────────────────────────────────── */}
         <section id="features" className="border-b border-[var(--color-border)]">
           <div className="mx-auto max-w-6xl px-6 py-20">
@@ -399,14 +457,15 @@ export default function Page() {
                 </thead>
                 <tbody className="divide-y divide-[var(--color-border)]">
                   {[
-                    ["GET",  "/healthz",           "Liveness probe"],
-                    ["POST", "/dispatch",          "Enqueue a ContentUnit for one or many platforms"],
-                    ["GET",  "/queue?status=…",    "List rows (queued / publishing / published / failed / dead)"],
-                    ["GET",  "/queue/{id}",        "One row — JSON or HTML (content-negotiated)"],
-                    ["POST", "/queue/{id}/retry",  "Re-queue a failed or dead row"],
-                    ["POST", "/ai/adapt",          "Rewrite a caption for each target platform"],
-                    ["POST", "/media/transcode",   "Resize image to a platform spec"],
-                    ["GET",  "/media/specs",       "List all 10 platform image specs"],
+                    ["GET",    "/healthz",           "Liveness probe — JSON for monitors, HTML dashboard for browsers"],
+                    ["POST",   "/dispatch",          "Enqueue a ContentUnit for one or many platforms"],
+                    ["GET",    "/queue?status=…",    "List rows (queued / publishing / published / dead)"],
+                    ["GET",    "/queue/{id}",        "One row — JSON or HTML (content-negotiated)"],
+                    ["POST",   "/queue/{id}/retry",  "Re-queue an errored or dead row"],
+                    ["DELETE", "/queue/{id}",        "Delete a single queue row permanently"],
+                    ["POST",   "/ai/adapt",          "Rewrite a caption for each target platform"],
+                    ["POST",   "/media/transcode",   "Resize image to a platform spec"],
+                    ["GET",    "/media/specs",       "List all 10 platform image specs"],
                   ].map(([method, path, purpose]) => (
                     <tr key={path} className="hover:bg-[var(--color-surface)]/50 transition-colors">
                       <td className="px-5 py-3 text-xs">
@@ -538,7 +597,7 @@ scheduler/worker.py
               </Link>
             </div>
             <p className="mt-8 text-xs text-[var(--color-muted)]">
-              129 tests · 7 platforms · 3 queue backends · 5 install methods
+              135 tests · 7 platforms · 3 queue backends · 5 install methods
             </p>
           </div>
         </section>

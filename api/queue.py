@@ -64,6 +64,7 @@ class QueueProtocol(Protocol):
     def mark_publishing(self, row_id: str) -> None: ...
     def mark_published(self, row_id: str, post_id: str) -> None: ...
     def mark_failed(self, row_id: str, err: str, dead: bool = False) -> None: ...
+    def delete(self, row_id: str) -> bool: ...
     def _update(self, row_id: str, patch: dict[str, Any]) -> None: ...
 
 
@@ -144,6 +145,15 @@ class JsonlQueue:
             "attempts": attempts,
             "last_error": err[:500],
         })
+
+    def delete(self, row_id: str) -> bool:
+        with _LOCK:
+            rows = _read_all()
+            new = [r for r in rows if r["id"] != row_id]
+            if len(new) == len(rows):
+                return False
+            _write_all(new)
+        return True
 
 
 def _new_row(unit_dict: dict, platform_key: str, scheduled_for: str) -> dict:
@@ -279,6 +289,14 @@ class RedisQueue:
             "attempts": attempts,
             "last_error": err[:500],
         })
+
+    def delete(self, row_id: str) -> bool:
+        pipe = self._r.pipeline()
+        pipe.delete(self._row_key(row_id))
+        pipe.srem(self._all_key(), row_id)
+        pipe.zrem(self._due_key(), row_id)
+        results = pipe.execute()
+        return bool(results[0])  # 1 if key existed and was deleted
 
 
 # ─── Postgres backend ──────────────────────────────────────────────────────
@@ -441,6 +459,12 @@ class PostgresQueue:
         """
         with self._conn() as conn, conn.cursor() as cur:
             cur.execute(sql, ("dead" if dead else "queued", err[:500], row_id))
+
+    def delete(self, row_id: str) -> bool:
+        sql = f"DELETE FROM {self.TABLE} WHERE id = %s"
+        with self._conn() as conn, conn.cursor() as cur:
+            cur.execute(sql, (row_id,))
+            return cur.rowcount > 0
 
 
 # ─── Factory ──────────────────────────────────────────────────────────────

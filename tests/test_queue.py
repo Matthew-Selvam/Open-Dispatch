@@ -63,3 +63,20 @@ def test_mark_failed_then_dead(tmp_path, monkeypatch):
     queue.mark_failed(rid, "boom-2", dead=True)
     assert queue.get(rid)["status"] == "dead"
     assert queue.get(rid)["attempts"] == 2
+
+
+def test_delete_row(tmp_path, monkeypatch):
+    q = _fresh_queue(tmp_path, monkeypatch)
+    queue = q.get_queue()
+    rid = queue.enqueue({"x": 1}, "telegram:default",
+                        datetime.now(tz=timezone.utc).isoformat())
+    assert queue.get(rid) is not None
+    assert queue.delete(rid) is True
+    assert queue.get(rid) is None
+    assert queue.list_all() == []
+
+
+def test_delete_nonexistent(tmp_path, monkeypatch):
+    q = _fresh_queue(tmp_path, monkeypatch)
+    queue = q.get_queue()
+    assert queue.delete("no-such-id") is False

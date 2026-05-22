@@ -36,7 +36,15 @@ logging.basicConfig(
 )
 log = logging.getLogger("open-dispatch.api")
 
-VERSION = "0.2.0"
+try:
+    from importlib.metadata import version as _pkg_version
+
+    VERSION = _pkg_version("open-dispatch")
+except Exception:  # not installed as a package (dev checkout) — keep in sync w/ pyproject
+    VERSION = "0.4.0"
+
+# Captured once at import — used to compute server uptime on /healthz.
+_START_TIME = datetime.now(tz=timezone.utc)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = REPO_ROOT / "web" / "templates"
@@ -101,11 +109,119 @@ def _wants_html(request: Request) -> bool:
     return "text/html" in accept or "hx-request" in {k.lower() for k in request.headers}
 
 
-# ─── JSON API (unchanged) ─────────────────────────────────────────────────
+def _fmt_uptime(seconds: float) -> str:
+    """Human-friendly uptime, e.g. '3d 14h 22m' or '47s'."""
+    secs = int(seconds)
+    days, rem = divmod(secs, 86400)
+    hours, rem = divmod(rem, 3600)
+    mins, sec = divmod(rem, 60)
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours:
+        parts.append(f"{hours}h")
+    if mins:
+        parts.append(f"{mins}m")
+    if not parts:  # < 1 min
+        parts.append(f"{sec}s")
+    return " ".join(parts[:3])
+
+
+def _rel_time(iso: str | None) -> str:
+    """ISO timestamp → 'just now' / '14 min ago' / '2h ago' / '3d ago'."""
+    if not iso:
+        return "never"
+    try:
+        then = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return iso
+    delta = (datetime.now(tz=timezone.utc) - then).total_seconds()
+    if delta < 60:
+        return "just now"
+    if delta < 3600:
+        return f"{int(delta // 60)} min ago"
+    if delta < 86400:
+        return f"{int(delta // 3600)}h ago"
+    return f"{int(delta // 86400)}d ago"
+
+
+def _queue_backend_name() -> str:
+    """Which queue backend is active (mirrors get_queue() selection logic)."""
+    if os.getenv("DATABASE_URL"):
+        return "Postgres"
+    if os.getenv("REDIS_URL"):
+        return "Redis"
+    return "JSONL on disk"
+
+
+def _healthz_context() -> dict[str, Any]:
+    """Build the health-dashboard stats from the queue. Cheap — one list_all()."""
+    rows = get_queue().list_all()
+    counts = _row_counts(rows)
+
+    published = [r for r in rows if r.get("status") == "published"]
+    last_dispatch = max(
+        published,
+        key=lambda r: r.get("updated_at", ""),
+        default=None,
+    )
+
+    # A row "errored" if it carries a last_error and hasn't since succeeded.
+    # The worker re-queues transient failures (status="queued" + last_error),
+    # and marks exhausted ones "dead" — surface both so retries are visible.
+    errored_rows = [
+        r for r in rows
+        if r.get("last_error") and r.get("status") != "published"
+    ]
+    errored_rows.sort(key=lambda r: r.get("updated_at", ""), reverse=True)
+    recent_errors = [
+        {
+            "platform": r.get("platform", "?"),
+            "error": (r.get("last_error") or "unknown error"),
+            "when": _rel_time(r.get("updated_at")),
+            "status": r.get("status", "?"),
+            "attempts": r.get("attempts", 0),
+        }
+        for r in errored_rows[:5]
+    ]
+
+    top_platforms = Counter(r.get("platform", "?") for r in rows).most_common(5)
+
+    uptime_secs = (datetime.now(tz=timezone.utc) - _START_TIME).total_seconds()
+
+    return {
+        "active": "health",
+        "version": VERSION,
+        "now": datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "uptime": _fmt_uptime(uptime_secs),
+        "backend": _queue_backend_name(),
+        "counts": counts,
+        "total": len(rows),
+        "configured_platforms": sorted(_platforms_configured()),
+        "last_dispatch": (
+            {
+                "platform": last_dispatch.get("platform", "?"),
+                "when": _rel_time(last_dispatch.get("updated_at")),
+                "post_id": last_dispatch.get("post_id"),
+            }
+            if last_dispatch
+            else None
+        ),
+        "top_platforms": top_platforms,
+        "recent_errors": recent_errors,
+        "failed_count": len(errored_rows),
+        "platform_emoji": PLATFORM_EMOJI,
+    }
+
+
+# ─── JSON API + health ─────────────────────────────────────────────────────
 
 @app.get("/healthz")
-def healthz() -> dict[str, Any]:
-    return {"status": "ok", "version": VERSION}
+def healthz(request: Request) -> Any:
+    """JSON for monitors/curl; HTML status dashboard for browsers."""
+    if _wants_html(request):
+        return templates.TemplateResponse(request, "health.html", _healthz_context())
+    return JSONResponse({"status": "ok", "version": VERSION})
 
 
 @app.post("/dispatch", status_code=202)
@@ -156,6 +272,70 @@ async def retry_row(request: Request, row_id: str) -> Any:
         # HTMX caller: re-render the queue fragment
         return await _render_queue_fragment(request, status=None)
     return {"id": row_id, "status": "queued"}
+
+
+@app.post("/_retry-all")
+async def retry_all(request: Request) -> Any:
+    """Re-queue every failed/dead row. Used by the health dashboard."""
+    q = get_queue()
+    requeued = 0
+    for row in q.list_all():
+        if row.get("last_error") and row.get("status") != "published":
+            q._update(row["id"], {"status": "queued", "last_error": None})  # noqa: SLF001
+            requeued += 1
+    if _wants_html(request):
+        # Browser form submit: bounce back to the refreshed health dashboard.
+        return RedirectResponse(url="/healthz", status_code=303)
+    return {"requeued": requeued}
+
+
+@app.delete("/queue/{row_id}")
+async def delete_row(request: Request, row_id: str) -> Any:
+    """Delete a single queue row permanently."""
+    q = get_queue()
+    row = q.get(row_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="not found")
+    q.delete(row_id)
+    if _wants_html(request):
+        return RedirectResponse(url="/", status_code=303)
+    return {"deleted": row_id}
+
+
+@app.post("/queue/{row_id}/delete")
+async def delete_row_post(request: Request, row_id: str) -> Any:
+    """HTML-form-friendly alias for DELETE /queue/{id}.
+
+    When called via HTMX from the queue table, returns the refreshed
+    queue fragment instead of a redirect.
+    """
+    q = get_queue()
+    row = q.get(row_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="not found")
+    q.delete(row_id)
+    # HTMX inline call from dashboard table
+    if "hx-request" in {k.lower() for k in request.headers}:
+        return await _render_queue_fragment(request, status=None)
+    if _wants_html(request):
+        return RedirectResponse(url="/", status_code=303)
+    return {"deleted": row_id}
+
+
+@app.post("/_purge")
+async def purge_queue(request: Request, status: str = "published") -> Any:
+    """Delete all rows with a given status. Default: clear published rows."""
+    allowed = {"published", "dead"}
+    if status not in allowed:
+        raise HTTPException(status_code=400, detail=f"can only purge: {', '.join(sorted(allowed))}")
+    q = get_queue()
+    deleted = 0
+    for row in q.list_all(status=status):
+        q.delete(row["id"])
+        deleted += 1
+    if _wants_html(request):
+        return RedirectResponse(url="/", status_code=303)
+    return {"purged": deleted, "status": status}
 
 
 # ─── Web UI ────────────────────────────────────────────────────────────────

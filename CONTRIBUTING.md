@@ -5,8 +5,8 @@ Thanks for considering a contribution. This guide gets you from zero to a passin
 ## Quick setup
 
 ```bash
-git clone https://github.com/matthewselvam/open-dispatch
-cd open-dispatch
+git clone https://github.com/Matthew-Selvam/Open-Dispatch
+cd Open-Dispatch
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 pip install pytest pytest-asyncio
