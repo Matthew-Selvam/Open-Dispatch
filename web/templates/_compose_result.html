@@ -1,6 +1,7 @@
 {% if ok %}
 <div class="alert alert-success">
   <strong>Dispatched.</strong>
+  {% if profile_label %}<span class="muted small"> via {{ profile_label }}</span>{% endif %}
   <span class="muted small">unit_id: <code class="mono">{{ unit_id }}</code></span>
   <ul class="enqueued-list">
     {% for e in enqueued %}

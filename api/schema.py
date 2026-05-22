@@ -49,6 +49,7 @@ class ContentUnit:
     scheduled_for: str | None = None
     formats: dict[str, Any] = field(default_factory=dict)
     webhook_url: str | None = None
+    profile_id: str | None = None  # which profile's creds to use when dispatching
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -66,6 +67,7 @@ class ContentUnit:
             scheduled_for=d.get("scheduled_for"),
             formats=dict(d.get("formats") or {}),
             webhook_url=d.get("webhook_url"),
+            profile_id=d.get("profile_id"),
         )
 
     @classmethod

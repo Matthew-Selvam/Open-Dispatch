@@ -15,27 +15,58 @@
       hx-swap="innerHTML"
       class="compose-form">
 
+  {# ── Profile selector ──────────────────────────────────────────────────── #}
+  <div class="field">
+    <label>Profile</label>
+    <div class="profile-selector-row">
+      <select name="profile_id" id="profile-select" class="input profile-select">
+        <option value="">— None (use .env defaults) —</option>
+        {% for p in profiles %}
+        <option value="{{ p.id }}"
+          {% if request.query_params.get('profile_id') == p.id %}selected{% endif %}>
+          {{ p.emoji }} {{ p.name }}
+          ({{ p.configured_platforms() | join(', ') or 'no creds' }})
+        </option>
+        {% endfor %}
+      </select>
+      <a href="/profiles/new" class="btn btn-ghost btn-mini profile-new-btn"
+         title="Create a new profile">+</a>
+    </div>
+    {% if not profiles %}
+    <p class="hint">
+      No profiles yet —
+      <a href="/profiles/new" style="color:var(--accent)">create one</a>
+      to group credentials under a name.
+    </p>
+    {% endif %}
+  </div>
+
+  {# ── Platforms ─────────────────────────────────────────────────────────── #}
   <div class="field">
     <label>Platforms</label>
-    <div class="checkbox-grid">
+    <div class="checkbox-grid" id="platform-list">
       {% for p in platforms %}
         <label class="check">
           <input type="checkbox" name="platforms" value="{{ p }}"
                  {% if p == 'telegram' %}checked{% endif %} />
           <span>{{ p }}</span>
-          {% if p in configured %}<span class="dot-green" title="creds present"></span>{% endif %}
+          {# Dots: .dot-env = configured in .env, .dot-profile = configured in profile #}
+          {% if p in configured %}
+            <span class="dot-green dot-env" title="{{ p }} configured in .env"></span>
+          {% endif %}
+          <span class="dot-green dot-profile" data-platform="{{ p }}"
+                title="{{ p }} configured in selected profile"
+                style="display:none"></span>
         </label>
       {% endfor %}
     </div>
-    <p class="hint">Account suffix: type <code>twitter:work</code> in the box below to override.</p>
+    <p class="hint" id="platform-hint">
+      Green dot = credentials present.
+      {% if profiles %}Select a profile above to see its configured platforms.{% endif %}
+    </p>
   </div>
 
-  <div class="field">
-    <label>Override targets (optional)</label>
-    <input type="text" name="targets_override"
-           placeholder="e.g. twitter:work,bluesky:personal" class="input" />
-  </div>
-
+  {# ── Text ──────────────────────────────────────────────────────────────── #}
   <div class="field">
     <label>Text / caption</label>
     <textarea name="text" rows="4" required class="input mono"
@@ -65,7 +96,7 @@
             hx-swap="innerHTML">
       ✦ Adapt with AI (preview per platform)
     </button>
-    <p class="hint">Rewrites the text above for each selected platform (limits, style, hashtags). Uses OpenRouter / Ollama / heuristic — whichever is configured.</p>
+    <p class="hint">Rewrites the text for each selected platform. Uses OpenRouter / Ollama / heuristic — whichever is configured.</p>
     <div id="ai-preview"></div>
   </div>
 
@@ -86,4 +117,48 @@
 </form>
 
 <div id="compose-result"></div>
+
+{# ── Profile-aware dot update ─────────────────────────────────────────────── #}
+<script>
+(function () {
+  const PROFILES = {{ profiles_js | safe }};
+  const select   = document.getElementById('profile-select');
+  const hint     = document.getElementById('platform-hint');
+
+  function updateDots(profileId) {
+    const profile = PROFILES.find(p => p.id === profileId);
+    const configured = profile ? profile.configured : [];
+
+    document.querySelectorAll('.dot-profile').forEach(dot => {
+      const platform = dot.dataset.platform;
+      dot.style.display = configured.includes(platform) ? 'inline-block' : 'none';
+    });
+
+    if (profile) {
+      hint.textContent = configured.length
+        ? `Profile "${profile.name}" has ${configured.join(', ')} configured.`
+        : `Profile "${profile.name}" has no credentials yet — edit it to add accounts.`;
+    } else {
+      hint.textContent = 'Green dot = credentials present in .env.';
+    }
+  }
+
+  select.addEventListener('change', () => updateDots(select.value));
+
+  // On load: if a profile_id was pre-selected via query string, reflect it
+  if (select.value) updateDots(select.value);
+})();
+</script>
+
+<style>
+.profile-selector-row {
+  display: flex; align-items: center; gap: 8px;
+}
+.profile-select { flex: 1; }
+.profile-new-btn {
+  flex-shrink: 0; font-size: 18px !important; padding: 4px 10px !important;
+  line-height: 1; border-radius: 4px;
+}
+.dot-profile { background: var(--info) !important; }  /* blue = profile-configured */
+</style>
 {% endblock %}

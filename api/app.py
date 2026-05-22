@@ -20,6 +20,15 @@ from ai import AdaptError, adapt_caption_async
 from api.queue import get_queue
 from api.schema import ContentUnit, parse_target, validate
 from media import PLATFORM_IMAGE_SPECS, TranscodeError, transcode_image_bytes
+from profiles import (
+    CRED_LABELS,
+    PASSWORD_FIELDS,
+    PLATFORM_CRED_MAP,
+    PLATFORM_EMOJI,
+    PRESET_COLORS,
+    Profile,
+    ProfileStore,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -193,11 +202,21 @@ async def queue_fragment(request: Request, status: str | None = None) -> HTMLRes
 async def compose_page(request: Request) -> HTMLResponse:
     platforms = sorted(ADAPTERS.keys())
     configured = _platforms_configured()
+    profiles = ProfileStore().list()
+    # Build per-profile configured-platforms map for client-side JS
+    import json as _json
+    profiles_js = _json.dumps([
+        {"id": p.id, "name": p.name, "emoji": p.emoji,
+         "configured": p.configured_platforms()}
+        for p in profiles
+    ])
     return templates.TemplateResponse(
         request, "compose.html",
         {
             "platforms": platforms,
             "configured": configured,
+            "profiles": profiles,
+            "profiles_js": profiles_js,
             "active": "compose",
             "version": VERSION,
             "now": datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
@@ -210,19 +229,16 @@ async def compose_submit(
     request: Request,
     text: str = Form(""),
     platforms: list[str] = Form(default=[]),
-    targets_override: str = Form(""),
+    profile_id: str = Form(""),
     scheduled_for: str = Form(""),
     webhook_url: str = Form(""),
     formats_json: str = Form(""),
 ) -> HTMLResponse:
     errors: list[str] = []
-    targets: list[str] = []
-    if targets_override.strip():
-        targets = [t.strip() for t in targets_override.split(",") if t.strip()]
-    else:
-        targets = [p for p in platforms if p]
+    targets: list[str] = [p for p in platforms if p]
+
     if not targets:
-        errors.append("pick at least one platform or enter override targets")
+        errors.append("pick at least one platform")
     if not text and not formats_json:
         errors.append("text or formats_json is required")
 
@@ -244,6 +260,7 @@ async def compose_submit(
         "scheduled_for": scheduled_for.strip() or None,
         "formats": formats,
         "webhook_url": webhook_url.strip() or None,
+        "profile_id": profile_id.strip() or None,
     })
     errs = validate(unit)
     if errs:
@@ -251,6 +268,10 @@ async def compose_submit(
             request, "_compose_result.html",
             {"ok": False, "errors": errs},
         )
+
+    # Resolve profile label for the result panel
+    profile = ProfileStore().get(profile_id.strip()) if profile_id.strip() else None
+    profile_label = f"{profile.emoji} {profile.name}" if profile else ".env defaults"
 
     q = get_queue()
     sf = unit.scheduled_for or datetime.now(tz=timezone.utc).isoformat()
@@ -263,7 +284,8 @@ async def compose_submit(
 
     return templates.TemplateResponse(
         request, "_compose_result.html",
-        {"ok": True, "unit_id": unit.id, "enqueued": enqueued},
+        {"ok": True, "unit_id": unit.id, "enqueued": enqueued,
+         "profile_label": profile_label},
     )
 
 
@@ -367,6 +389,96 @@ async def compose_adapt_htmx(
         "(or just submit — the adapter ran on the server side):"
         f'<pre class="mono small" style="margin-top:8px;max-height:300px;overflow:auto">{pretty}</pre>'
         "</div>",
+    )
+
+
+# ─── Profiles ─────────────────────────────────────────────────────────────────
+
+def _profile_ctx(version: str, now: str, active: str = "profiles") -> dict:
+    return {"active": active, "version": version, "now": now,
+            "platform_cred_map": PLATFORM_CRED_MAP, "cred_labels": CRED_LABELS,
+            "password_fields": PASSWORD_FIELDS, "platform_emoji": PLATFORM_EMOJI,
+            "preset_colors": PRESET_COLORS}
+
+
+@app.get("/profiles", response_class=HTMLResponse)
+async def profiles_list(request: Request) -> HTMLResponse:
+    profiles = ProfileStore().list()
+    ctx = _profile_ctx(VERSION, datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
+    return templates.TemplateResponse(request, "profiles.html",
+                                      {**ctx, "profiles": profiles})
+
+
+@app.get("/profiles/new", response_class=HTMLResponse)
+async def profile_new(request: Request) -> HTMLResponse:
+    ctx = _profile_ctx(VERSION, datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
+    return templates.TemplateResponse(request, "profile_form.html",
+                                      {**ctx, "profile": None, "title": "New Profile"})
+
+
+@app.get("/profiles/{profile_id}/edit", response_class=HTMLResponse)
+async def profile_edit(request: Request, profile_id: str) -> HTMLResponse:
+    profile = ProfileStore().get(profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="profile not found")
+    ctx = _profile_ctx(VERSION, datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
+    return templates.TemplateResponse(request, "profile_form.html",
+                                      {**ctx, "profile": profile,
+                                       "title": f"Edit — {profile.name}"})
+
+
+@app.post("/profiles", response_class=HTMLResponse)
+async def profile_create(request: Request) -> HTMLResponse:
+    form = await request.form()
+    profile = _profile_from_form(form)
+    ProfileStore().save(profile)
+    return RedirectResponse(url="/profiles", status_code=303)
+
+
+@app.post("/profiles/{profile_id}", response_class=HTMLResponse)
+async def profile_update(request: Request, profile_id: str) -> HTMLResponse:
+    store = ProfileStore()
+    if not store.get(profile_id):
+        raise HTTPException(status_code=404, detail="profile not found")
+    form = await request.form()
+    profile = _profile_from_form(form, profile_id=profile_id)
+    store.save(profile)
+    return RedirectResponse(url="/profiles", status_code=303)
+
+
+@app.post("/profiles/{profile_id}/delete", response_class=HTMLResponse)
+async def profile_delete(request: Request, profile_id: str) -> HTMLResponse:
+    ProfileStore().delete(profile_id)
+    return RedirectResponse(url="/profiles", status_code=303)
+
+
+@app.get("/api/profiles")
+def api_profiles_list() -> list[dict]:
+    """JSON list — used by the compose page JS."""
+    return [
+        {"id": p.id, "name": p.name, "emoji": p.emoji,
+         "color": p.color, "configured": p.configured_platforms()}
+        for p in ProfileStore().list()
+    ]
+
+
+def _profile_from_form(form: Any, profile_id: str | None = None) -> Profile:
+    """Build a Profile from a submitted HTML form."""
+    pid = profile_id or str(form.get("id", "")).strip() or None
+    platforms: dict[str, dict[str, str]] = {}
+    for platform, fields in PLATFORM_CRED_MAP.items():
+        creds: dict[str, str] = {}
+        for field_name in fields:
+            value = str(form.get(f"{platform}__{field_name}", "")).strip()
+            creds[field_name] = value
+        if any(v for v in creds.values()):
+            platforms[platform] = creds
+    return Profile(
+        id=pid if pid else Profile().id,
+        name=str(form.get("name", "")).strip() or "Unnamed",
+        emoji=str(form.get("emoji", "🎭")).strip() or "🎭",
+        color=str(form.get("color", "#4ade80")).strip() or "#4ade80",
+        platforms=platforms,
     )
 
 

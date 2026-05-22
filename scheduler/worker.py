@@ -18,6 +18,7 @@ import httpx
 from adapters import ADAPTERS
 from api.queue import get_queue
 from api.schema import ContentUnit
+from profiles import ProfileStore, profile_env
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,7 +44,13 @@ def _publish(row: dict) -> tuple[bool, str, str]:
     if not adapter:
         return False, "", f"no adapter for platform '{platform}'"
     unit = ContentUnit.from_dict(row["unit"])
-    return adapter.publish(unit, account)
+
+    # Inject profile credentials if the unit references a profile
+    profile_id = unit.profile_id or (row.get("unit") or {}).get("profile_id")
+    profile = ProfileStore().get(profile_id) if profile_id else None
+
+    with profile_env(profile):
+        return adapter.publish(unit, account)
 
 
 def _fire_webhook(url: str, payload: dict) -> None:
