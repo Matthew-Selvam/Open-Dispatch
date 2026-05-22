@@ -12,13 +12,14 @@ class OpenDispatch < Formula
 
   # ── installation ─────────────────────────────────────────────────────────
   def install
-    python = Formula["python@3.12"].opt_bin/"python3"
+    # libexec/bin/python3 is the versioned shim; opt/bin only has python3.12
+    python = Formula["python@3.12"].opt_libexec/"bin/python3"
     venv   = libexec/"venv"
 
     # Create an isolated virtualenv so the system Python is untouched
     system python, "-m", "venv", venv
-    system "#{venv}/bin/pip", "install", "--upgrade", "--quiet", "pip", "wheel"
-    system "#{venv}/bin/pip", "install", "--quiet", "-r", "requirements.txt"
+    system "#{venv}/bin/pip", "install", "--upgrade", "--quiet", "--no-cache-dir", "pip", "wheel"
+    system "#{venv}/bin/pip", "install", "--quiet", "--no-cache-dir", "-r", "requirements.txt"
 
     # Install the package itself (gives access to all modules by path)
     libexec.install Dir["*"]
