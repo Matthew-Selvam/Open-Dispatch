@@ -16,14 +16,14 @@ struct SettingsView: View {
                     TextField("", value: $port, format: .number)
                         .frame(width: 80)
                         .textFieldStyle(.roundedBorder)
-                        .onChange(of: port) { _, new in
+                        .onChange(of: port) { new in
                             UserDefaults.standard.set(new, forKey: "od.port")
                         }
                 }
 
                 Toggle("Start server automatically on app launch", isOn: $autoStart)
                 Toggle("Launch at login", isOn: $startOnLogin)
-                    .onChange(of: startOnLogin) { _, enabled in
+                    .onChange(of: startOnLogin) { enabled in
                         LoginItemManager.set(enabled: enabled)
                     }
             }

@@ -84,10 +84,13 @@ Download the latest `Open-Dispatch-x.x.x.dmg` from the
 [GitHub Releases](https://github.com/Matthew-Selvam/Open-Dispatch/releases) page.
 
 1. Open the DMG, drag **Open-Dispatch.app** to **Applications**
-2. Launch it — an icon appears in your menu bar
-3. Click the icon → **Edit .env** to add your platform credentials
-4. Click → **Start Server**
-5. Click → **Open Dashboard** to open the web UI
+2. **First launch:** right-click the app → **Open** → click **Open** in the Gatekeeper dialog (unsigned build — only needed once)
+3. An icon appears in your menu bar
+4. Click the icon → **Edit .env** to add your platform credentials
+5. Click → **Start Server**
+6. Click → **Open Dashboard** to open the web UI
+
+> **Apple Silicon & Intel** — the release binary is native arm64; Rosetta 2 handles Intel Macs automatically.
 
 The menubar app bundles the Python server and worker — no separate Python install required.
 

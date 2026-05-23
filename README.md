@@ -176,10 +176,13 @@ Best for Python developers who want to embed Open-Dispatch in an existing codeba
 
 1. Download `Open-Dispatch-0.4.0.dmg` from [GitHub Releases](https://github.com/Matthew-Selvam/Open-Dispatch/releases)
 2. Drag `Open-Dispatch.app` to `/Applications`
-3. Launch — a status icon appears in your menu bar
-4. Click → **Edit .env** → add your platform credentials
-5. Click → **Start Server**
-6. Click → **Open Dashboard** → `http://localhost:8000`
+3. **First launch:** right-click → **Open** → click **Open** in the dialog (unsigned build — bypasses Gatekeeper once)
+4. A status icon appears in your menu bar
+5. Click → **Edit .env** → add your platform credentials
+6. Click → **Start Server**
+7. Click → **Open Dashboard** → `http://localhost:8000`
+
+> **Apple Silicon & Intel** — this release is native arm64. Rosetta 2 runs it on Intel Macs without any extra steps.
 
 SwiftUI menubar app (macOS 13+). Bundles the Python server — no separate Python install. Supports launch-at-login via `SMAppService`.
 

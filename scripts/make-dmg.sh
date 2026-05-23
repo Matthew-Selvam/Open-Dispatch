@@ -39,16 +39,19 @@ mkdir -p dist "$BUILD_DIR" "$STAGING_DIR"
 echo "▶ Building macOS app bundle (Swift, macOS 13+)…"
 
 # ── compile via swift build ────────────────────────────────────────────────────
-(
-  cd "$APP_DIR"
-  swift build \
-    -c release \
-    --arch arm64 \
-    --arch x86_64 \
-    2>&1
-)
-
-BINARY="${APP_DIR}/.build/apple/Products/Release/OpenDispatch"
+# A universal (arm64 + x86_64) build requires Xcode's xcbuild. With only the
+# Command Line Tools installed, that step fails — so fall back to a native
+# single-arch build, which uses SwiftPM's own build system and works under CLT.
+DEV_DIR="$(xcode-select -p 2>/dev/null || true)"
+if [[ "$DEV_DIR" == *Xcode*.app* ]]; then
+  echo "  Xcode detected — building universal (arm64 + x86_64)…"
+  ( cd "$APP_DIR" && swift build -c release --arch arm64 --arch x86_64 2>&1 )
+  BINARY="${APP_DIR}/.build/apple/Products/Release/OpenDispatch"
+else
+  echo "  Command Line Tools only — building native $(uname -m) (install Xcode for a universal binary)…"
+  ( cd "$APP_DIR" && swift build -c release 2>&1 )
+  BINARY="$(cd "$APP_DIR" && swift build -c release --show-bin-path)/OpenDispatch"
+fi
 [ -f "$BINARY" ] || { echo "Build output not found at $BINARY"; exit 1; }
 
 # ── assemble .app bundle ──────────────────────────────────────────────────────

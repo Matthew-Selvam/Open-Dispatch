@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Combine
 
 /// Tracks whether the open-dispatch server process is alive and polls /healthz.
