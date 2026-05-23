@@ -4,7 +4,22 @@
 > Twitter / X · Instagram · Telegram · Bluesky · LinkedIn · Threads · YouTube Shorts
 > — self-host forever free · MIT license
 
+<p align="center">
+  <a href="https://github.com/Matthew-Selvam/Open-Dispatch/stargazers"><img src="https://img.shields.io/github/stars/Matthew-Selvam/Open-Dispatch?style=for-the-badge&logo=github&color=4ade80&labelColor=141418" alt="GitHub stars"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-4ade80?style=for-the-badge&labelColor=141418" alt="MIT License"></a>
+  <a href="https://github.com/Matthew-Selvam/Open-Dispatch/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Matthew-Selvam/Open-Dispatch/ci.yml?style=for-the-badge&logo=github&label=CI&labelColor=141418" alt="CI status"></a>
+  <img src="https://img.shields.io/badge/python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white&labelColor=141418" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white&labelColor=141418" alt="Docker ready">
+</p>
+
 Open-Dispatch is the **infrastructure layer** for content distribution. Like Stripe is to payments, this is to posting. One HTTP call, seven platforms, zero vendor lock-in. Integrate from any app, n8n workflow, cron job, or AI agent.
+
+<p align="center">
+  <!-- Record a 30s demo (see docs/DEMO_SCRIPT.md) and drop it here as docs/demo.gif -->
+  <img src="docs/demo.gif" alt="Open-Dispatch — compose once, dispatch to every platform" width="760">
+</p>
+
+> ⭐ **If self-hosting your social posting sounds good, [star the repo](https://github.com/Matthew-Selvam/Open-Dispatch) to follow development** — it's the fastest way to support an independent MIT project.
 
 ```bash
 curl -X POST http://localhost:8000/dispatch \
@@ -459,6 +474,24 @@ See [SECURITY.md](./SECURITY.md). Report vulnerabilities via GitHub Security Adv
 
 Full documentation for all five install methods: [INSTALL_METHODS.md](./INSTALL_METHODS.md).
 
+## Migrating from a hosted scheduler
+
+Moving off Buffer, Hootsuite, or a similar paid tool? The step-by-step guide is in
+[docs/migrating-from-zernio.md](./docs/migrating-from-zernio.md) — export your accounts,
+map them to `.env`, and dispatch your first post in about ten minutes.
+
+## Community
+
+- 💬 **[Discussions](https://github.com/Matthew-Selvam/Open-Dispatch/discussions)** — questions, ideas, show-and-tell
+- 🐛 **[Issues](https://github.com/Matthew-Selvam/Open-Dispatch/issues)** — bugs and feature requests
+- ⭐ **Star the repo** to follow development — every star helps an independent MIT project reach more self-hosters
+
+## Star History
+
+<a href="https://star-history.com/#Matthew-Selvam/Open-Dispatch&Date">
+  <img src="https://api.star-history.com/svg?repos=Matthew-Selvam/Open-Dispatch&type=Date" alt="Star History Chart" width="600">
+</a>
+
 ## License
 
-MIT.
+MIT © [Matthew Selvam](https://github.com/Matthew-Selvam). Fork it, ship it, never pay per-account fees again.
