@@ -12,6 +12,7 @@ import os
 import random
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 
@@ -19,6 +20,10 @@ from adapters import ADAPTERS
 from api.queue import get_queue
 from api.schema import ContentUnit
 from profiles import ProfileStore, profile_env
+
+# Health heartbeat — written every poll loop so /healthz can show worker status.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+HEARTBEAT_PATH = _REPO_ROOT / "data" / ".worker_heartbeat"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,6 +34,15 @@ log = logging.getLogger("open-dispatch.worker")
 POLL_INTERVAL = int(os.getenv("WORKER_POLL_INTERVAL", "5"))
 MAX_ATTEMPTS = int(os.getenv("WORKER_MAX_ATTEMPTS", "3"))
 BACKOFF_BASE = int(os.getenv("WORKER_BACKOFF_BASE", "30"))  # seconds
+
+
+def _write_heartbeat() -> None:
+    """Write the current UTC timestamp so /healthz can show worker liveness."""
+    try:
+        HEARTBEAT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        HEARTBEAT_PATH.write_text(datetime.now(tz=timezone.utc).isoformat(), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass  # never crash the worker loop over a heartbeat write
 
 
 def _backoff_seconds(attempts: int) -> int:
@@ -101,6 +115,7 @@ def main() -> int:
              POLL_INTERVAL, MAX_ATTEMPTS, BACKOFF_BASE)
     while True:
         try:
+            _write_heartbeat()
             run_once()
         except KeyboardInterrupt:
             log.info("interrupted; exiting")

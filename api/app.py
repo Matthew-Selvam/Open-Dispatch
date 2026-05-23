@@ -154,6 +154,30 @@ def _queue_backend_name() -> str:
     return "JSONL on disk"
 
 
+def _worker_status() -> dict[str, Any]:
+    """Read the worker heartbeat file and report liveness.
+
+    The worker writes REPO_ROOT/data/.worker_heartbeat (ISO timestamp)
+    on every poll loop.  If the file is missing or stale (> 3× poll
+    interval), the worker is not running.
+    """
+    heartbeat_path = REPO_ROOT / "data" / ".worker_heartbeat"
+    poll_interval = int(os.getenv("WORKER_POLL_INTERVAL", "5"))
+    stale_threshold = poll_interval * 3  # ≈ 15s by default
+
+    if not heartbeat_path.exists():
+        return {"running": False, "label": "not running", "last_beat": None}
+    try:
+        ts = heartbeat_path.read_text(encoding="utf-8").strip()
+        then = datetime.fromisoformat(ts)
+        age = (datetime.now(tz=timezone.utc) - then).total_seconds()
+        if age <= stale_threshold:
+            return {"running": True, "label": "running", "last_beat": _rel_time(ts)}
+        return {"running": False, "label": "stale", "last_beat": _rel_time(ts)}
+    except Exception:  # noqa: BLE001
+        return {"running": False, "label": "unknown", "last_beat": None}
+
+
 def _healthz_context() -> dict[str, Any]:
     """Build the health-dashboard stats from the queue. Cheap — one list_all()."""
     rows = get_queue().list_all()
@@ -195,6 +219,7 @@ def _healthz_context() -> dict[str, Any]:
         "now": datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "uptime": _fmt_uptime(uptime_secs),
         "backend": _queue_backend_name(),
+        "worker": _worker_status(),
         "counts": counts,
         "total": len(rows),
         "configured_platforms": sorted(_platforms_configured()),

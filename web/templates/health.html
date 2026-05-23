@@ -23,6 +23,21 @@
   </div>
 </div>
 
+{# ── Worker liveness strip ──────────────────────────────────────────────── #}
+<div class="worker-strip {% if worker.running %}worker-ok{% else %}worker-warn{% endif %}">
+  <span class="worker-icon">{% if worker.running %}●{% else %}○{% endif %}</span>
+  <span class="worker-label">
+    Worker: <strong>{{ worker.label }}</strong>
+    {% if worker.last_beat %}<span class="muted small"> · last beat {{ worker.last_beat }}</span>{% endif %}
+  </span>
+  {% if not worker.running %}
+  <span class="worker-hint small">
+    Start with: <code class="mono">python -m scheduler.worker</code>
+    or <code class="mono">dispatch worker</code>
+  </span>
+  {% endif %}
+</div>
+
 {# ── Queue stat grid ────────────────────────────────────────────────────── #}
 <div class="health-stats">
   <div class="hstat hstat-queued">
@@ -225,5 +240,19 @@
 }
 .health-err-badge-dead  { color: var(--err);  background: rgba(248,113,113,.12); border: 1px solid rgba(248,113,113,.30); }
 .health-err-badge-retry { color: var(--warn); background: rgba(250,204,21,.10); border: 1px solid rgba(250,204,21,.25); }
+
+.worker-strip {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+  padding: 10px 16px; margin-bottom: 18px;
+  border-radius: 6px; font-size: 13px;
+  border: 1px solid var(--border);
+}
+.worker-ok   { background: rgba(74,222,128,.04); border-color: rgba(74,222,128,.25); }
+.worker-warn { background: rgba(250,204,21,.04); border-color: rgba(250,204,21,.25); }
+.worker-icon { font-size: 10px; }
+.worker-ok   .worker-icon { color: var(--accent); }
+.worker-warn .worker-icon { color: var(--warn); }
+.worker-label { color: var(--fg); }
+.worker-hint  { color: var(--muted); margin-left: auto; }
 </style>
 {% endblock %}
