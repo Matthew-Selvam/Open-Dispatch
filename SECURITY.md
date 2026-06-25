@@ -52,6 +52,23 @@ Out of scope:
 - Self-XSS in the dashboard composer (the dashboard is single-user trusted)
 - Brute-forcing the *external* platforms (Twitter, IG, etc.) — that's their problem
 
+## Third-party adapter backends
+
+Some adapters can be switched to an alternative backend (e.g. `TWITTER_BACKEND=xquik`). These are **opt-in** and carry a different trust model from the default direct-API path:
+
+- Your tweet content and API key are sent to a third-party server, not just to the platform.
+- Open-Dispatch has no control over that third party's security posture, uptime, or data-retention policy.
+- A compromise of the third-party service could expose credentials or allow unauthorized posting.
+
+**Mitigations if you use an alternative backend:**
+
+1. Create a dedicated, scoped API key for Open-Dispatch and rotate it on a schedule.
+2. Limit that key's OAuth scopes to write-only / no read-DM where the platform allows it.
+3. Read the third party's privacy policy before enabling.
+4. Disable the alternative backend (`unset TWITTER_BACKEND`) if you no longer need it.
+
+These backends are in scope for SSRF and credential-leakage reports — if you find the alternative-backend path sending data somewhere unexpected, report it.
+
 ## Threat model — what Open-Dispatch assumes
 
 Open-Dispatch is designed for **trusted self-hosting**. It assumes:

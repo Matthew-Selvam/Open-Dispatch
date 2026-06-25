@@ -463,6 +463,21 @@ pytest -q
 - [ ] Video transcoding (ffmpeg-backed)
 - [ ] PyPI publish
 
+## Third-party adapter backends
+
+Some adapters support an alternative backend via an env var. These backends route your content **and credentials** through a third-party service instead of the platform's official API. They are fully opt-in — the default backend never changes.
+
+| Adapter | Env var | Default | Alternative | Routes through |
+|---------|---------|---------|-------------|----------------|
+| Twitter | `TWITTER_BACKEND` | `tweepy` (official API) | `xquik` | [xquik.com](https://xquik.com) |
+
+**Before enabling a third-party backend:**
+
+- Review that service's privacy policy and ToS.
+- Understand that your tweet content and API key will transit their servers.
+- Use a scoped/rotated API key wherever possible.
+- See [SECURITY.md](SECURITY.md) for the full threat model.
+
 ---
 
 ## Contributing
