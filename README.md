@@ -209,6 +209,8 @@ cp .env.example .env
 $EDITOR .env
 ```
 
+**Where do I get the API keys?** See [CREDENTIALS_GUIDE.html](CREDENTIALS_GUIDE.html) — a step-by-step reference for Twitter, Instagram, Telegram, Bluesky, LinkedIn, Threads, YouTube. Open it in a browser.
+
 ```env
 # ── Twitter / X ──────────────────────────────────────────────────────────────
 TWITTER_API_KEY=...

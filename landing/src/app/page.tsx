@@ -201,6 +201,36 @@ const FAQS = [
     ),
   },
   {
+    q: "Where do I get API keys for each platform?",
+    a: (
+      <>
+        See the{" "}
+        <Link
+          href={`${GITHUB}/blob/main/CREDENTIALS_GUIDE.html`}
+          target="_blank" rel="noopener noreferrer"
+          className="underline underline-offset-2 hover:text-[var(--color-fg)]"
+        >
+          Credentials Guide
+        </Link>
+        {" "}— a step-by-step reference with direct links to Twitter, Instagram, Telegram, Bluesky, LinkedIn, Threads, and YouTube developer consoles. Open it in a browser for copy/paste instructions per platform.
+      </>
+    ),
+  },
+  {
+    q: "Which credential format should I use for multiple accounts?",
+    a: (
+      <>
+        Use <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">PLATFORM_FIELD_ACCOUNT</code>{" "}
+        (uppercase). Example: <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">TWITTER_ACCESS_TOKEN_WORK</code>{" "}
+        and{" "}
+        <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">TWITTER_ACCESS_TOKEN_PERSONAL</code>{" "}
+        let you target <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">twitter:work</code>{" "}
+        or <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">twitter:personal</code>{" "}
+        in your dispatch requests. See the README for per-platform examples.
+      </>
+    ),
+  },
+  {
     q: "Can I add a new social platform?",
     a: (
       <>
