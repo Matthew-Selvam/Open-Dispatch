@@ -435,6 +435,44 @@ Provider priority: **Ollama** (free, local) → **OpenRouter** (any cloud model)
 
 ---
 
+## Accessing the API
+
+Once running, the API is at `http://localhost:8000` — no auth by default (designed for trusted self-hosting).
+
+**Check it's live:**
+```bash
+curl http://localhost:8000/healthz
+# → {"status": "ok"}
+```
+
+**Post to Twitter:**
+```bash
+curl -X POST http://localhost:8000/dispatch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "targets": ["twitter"],
+    "formats": {
+      "twitter_thread": { "tweets": ["your tweet here"] }
+    }
+  }'
+```
+
+**Check the queue:**
+```bash
+curl "http://localhost:8000/queue?status=published"
+```
+
+**Retry a failed post:**
+```bash
+curl -X POST http://localhost:8000/queue/<id>/retry
+```
+
+Full endpoint reference: [open-dispatch.vercel.app/api-reference](https://open-dispatch.vercel.app/api-reference) · or open `http://localhost:8000/` for the built-in dashboard.
+
+> **Exposing to the internet?** Put it behind Cloudflare Access, Tailscale, or basic auth first. See [SECURITY.md](SECURITY.md).
+
+---
+
 ## Tests
 
 ```bash

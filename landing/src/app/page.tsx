@@ -185,6 +185,22 @@ const FAQS = [
     a: "Yes — MIT licensed. Your platform credentials never leave your own machine. There's no cloud component, no telemetry, and no account to create.",
   },
   {
+    q: "How do I access the API?",
+    a: (
+      <>
+        Once Open-Dispatch is running, the API is available at{" "}
+        <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">http://localhost:8000</code>{" "}
+        with no auth required by default (it's designed for trusted self-hosting). Hit{" "}
+        <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">GET /healthz</code>{" "}
+        to confirm it's live, then{" "}
+        <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">POST /dispatch</code>{" "}
+        with a JSON body to send content. See the{" "}
+        <a href="/api-reference" className="underline underline-offset-2 hover:text-[var(--color-fg)]">API reference →</a>
+        {" "}for the full endpoint list and request shapes.
+      </>
+    ),
+  },
+  {
     q: "Can I add a new social platform?",
     a: (
       <>
@@ -217,6 +233,7 @@ export default function Page() {
             <a href="#install"   className="hover:text-[var(--color-fg)] transition-colors hidden sm:block">Install</a>
             <a href="#features"  className="hover:text-[var(--color-fg)] transition-colors hidden sm:block">Features</a>
             <a href="#faq"       className="hover:text-[var(--color-fg)] transition-colors hidden sm:block">FAQ</a>
+            <Link href="/api-reference" className="hover:text-[var(--color-fg)] transition-colors hidden sm:block">API</Link>
             <Link
               href={GITHUB} target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1.5 rounded border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-fg)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] transition-colors"
