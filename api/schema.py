@@ -24,6 +24,7 @@ CAPTION_LIMITS = {
     "bluesky": 300,
     "linkedin": 3000,
     "threads": 500,
+    "facebook": 63206,
 }
 
 TARGET_RE = re.compile(r"^(?P<platform>[a-z]+)(?::(?P<account>[a-z0-9._-]+))?$")

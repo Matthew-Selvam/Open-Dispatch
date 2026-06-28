@@ -397,6 +397,43 @@ The credential just needs your Open-Dispatch base URL (plus an optional bearer i
 
 ---
 
+## MCP server (Claude Desktop, Cursor, AI agents)
+
+`mcp_server.py` wraps the entire Open-Dispatch API as an MCP server — 7 tools usable from Claude Desktop, Cursor, or any MCP-compatible AI agent via natural language.
+
+```bash
+pip install "open-dispatch[mcp]"
+```
+
+**Claude Desktop** — add to `~/.claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "open-dispatch": {
+      "command": "python",
+      "args": ["/path/to/open-dispatch/mcp_server.py"],
+      "env": { "OPEN_DISPATCH_URL": "http://localhost:8000" }
+    }
+  }
+}
+```
+
+Then ask Claude things like:
+- *"Post this to Twitter and Bluesky"*
+- *"Check if my last post went through"*
+- *"Retry the failed LinkedIn post"*
+- *"Adapt this caption for Twitter, Instagram and LinkedIn"*
+
+**Available tools:** `health`, `dispatch`, `get_queue`, `get_row`, `retry_row`, `delete_row`, `adapt_caption`, `list_platforms`
+
+**SSE transport** (for remote/browser use):
+```bash
+python mcp_server.py --transport sse --port 8001
+```
+
+---
+
 ## Media transcoding
 
 Per-platform image resize via Pillow — 10 platform specs out of the box. Honors EXIF orientation, flattens RGBA to JPEG, never upscales.
@@ -499,8 +536,13 @@ pytest -q
 - [x] Homebrew tap (`brew install open-dispatch`)
 - [x] Universal install.sh (macOS + Linux, launchd + systemd)
 - [x] macOS menubar app + DMG
-- [ ] TikTok adapter (Content Posting API once approved)
+- [x] **TikTok adapter** (Content Posting API v2 — PULL_FROM_URL)
+- [x] **Facebook adapter** (Meta Graph API v19 — text, photo, video)
+- [x] **MCP server** (`mcp_server.py` — 7 tools, works with Claude Desktop, Cursor, any MCP client)
 - [ ] Video transcoding (ffmpeg-backed)
+- [ ] Calendar view in dashboard
+- [ ] Bulk CSV import
+- [ ] Analytics (fetch engagement metrics per post)
 - [ ] PyPI publish
 
 ## Third-party adapter backends
