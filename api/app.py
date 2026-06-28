@@ -745,3 +745,101 @@ async def media_transcode(request: Request) -> Any:
     spec = PLATFORM_IMAGE_SPECS[platform]
     mime = "image/jpeg" if spec.format == "JPEG" else "image/png"
     return Response(content=out, media_type=mime)
+
+
+# ─── Bulk CSV import ──────────────────────────────────────────────────────
+
+@app.post("/dispatch/bulk", status_code=202)
+async def dispatch_bulk(request: Request) -> JSONResponse:
+    """Bulk-enqueue posts from a CSV upload.
+
+    Accepts multipart/form-data with a single field named `file` (text/csv).
+
+    CSV format — one row per post, columns (order matters):
+      targets, format_key, text_or_json, scheduled_for
+      - targets:       comma-separated platform targets, e.g. "twitter,bluesky"
+      - format_key:    e.g. "twitter_thread" or "bluesky_post"
+      - text_or_json:  either plain text (auto-wrapped) or raw JSON object
+      - scheduled_for: ISO-8601 datetime or empty (post immediately)
+
+    Example row:
+      "twitter,bluesky","twitter_thread","Hello world!","2026-07-01T09:00:00+00:00"
+
+    Returns list of enqueued unit IDs and row IDs.
+    """
+    import csv
+    import io
+
+    content_type = request.headers.get("content-type", "")
+    if "multipart" in content_type:
+        form = await request.form()
+        upload = form.get("file")
+        if upload is None:
+            raise HTTPException(status_code=400, detail="multipart: missing 'file' field")
+        raw = (await upload.read()).decode("utf-8")  # type: ignore[union-attr]
+    else:
+        raw = (await request.body()).decode("utf-8")
+
+    if not raw.strip():
+        raise HTTPException(status_code=400, detail="CSV body is empty")
+
+    reader = csv.reader(io.StringIO(raw))
+    q = get_queue()
+    results: list[dict] = []
+    errors: list[dict] = []
+
+    for i, row in enumerate(reader, start=1):
+        # skip blank lines and header rows starting with '#' or 'targets'
+        if not row or not row[0].strip() or row[0].strip().lower() in {"targets", "#"}:
+            continue
+        if len(row) < 3:
+            errors.append({"row": i, "error": "need at least 3 columns: targets, format_key, text_or_json"})
+            continue
+
+        raw_targets = [t.strip() for t in row[0].split(",") if t.strip()]
+        format_key = row[1].strip()
+        text_or_json = row[2].strip()
+        scheduled_for = row[3].strip() if len(row) > 3 else ""
+
+        # Parse the payload — JSON object or plain text
+        try:
+            payload = json.loads(text_or_json)
+            if not isinstance(payload, dict):
+                raise ValueError("not a dict")
+        except (json.JSONDecodeError, ValueError):
+            # Treat as plain text — wrap using common field names per format_key
+            text_field = "text" if "bluesky" in format_key or "telegram" in format_key \
+                or "linkedin" in format_key or "threads" in format_key or "facebook" in format_key \
+                else "tweets" if "twitter" in format_key \
+                else "caption"
+            payload = {text_field: [text_or_json] if text_field == "tweets" else text_or_json}
+
+        unit = ContentUnit(
+            targets=raw_targets,
+            formats={format_key: payload},
+            scheduled_for=scheduled_for or None,
+        )
+        errs = validate(unit)
+        if errs:
+            errors.append({"row": i, "errors": errs})
+            continue
+
+        sf = unit.scheduled_for or datetime.now(tz=timezone.utc).isoformat()
+        enqueued = []
+        for target in unit.targets:
+            platform, account = parse_target(target)
+            key = f"{platform}:{account or 'default'}"
+            row_id = q.enqueue(unit.to_dict(), key, sf)
+            enqueued.append({"id": row_id, "target": target, "scheduled_for": sf})
+
+        results.append({"unit_id": unit.id, "enqueued": enqueued})
+
+    return JSONResponse(
+        status_code=202,
+        content={
+            "imported": len(results),
+            "errors": len(errors),
+            "results": results,
+            "error_details": errors,
+        },
+    )
