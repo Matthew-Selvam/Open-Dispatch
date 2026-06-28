@@ -448,3 +448,166 @@ class TestYouTubeAdapter:
         from adapters.youtube import _build_metadata
         meta = _build_metadata({"title": "x", "privacy": "topsecret"})
         assert meta["status"]["privacyStatus"] == "public"
+
+
+# ─── TikTok ─────────────────────────────────────────────────────────────
+
+class TestTikTokAdapter:
+    def test_missing_token(self, monkeypatch):
+        monkeypatch.delenv("TIKTOK_ACCESS_TOKEN", raising=False)
+        from adapters import tiktok
+        ok, _, err = tiktok.publish(_unit("tiktok_post", {"video_url": "https://example.com/v.mp4"}))
+        assert ok is False
+        assert "TIKTOK_ACCESS_TOKEN" in err
+
+    def test_missing_video_url(self, monkeypatch):
+        monkeypatch.setenv("TIKTOK_ACCESS_TOKEN", "tok123")
+        from adapters import tiktok
+        ok, _, err = tiktok.publish(_unit("tiktok_post", {"caption": "hi"}))
+        assert ok is False
+        assert "video_url" in err
+
+    def test_happy_path(self, monkeypatch):
+        monkeypatch.setenv("TIKTOK_ACCESS_TOKEN", "tok123")
+        import adapters.tiktok as tt
+        monkeypatch.setattr("adapters.tiktok.time.sleep", lambda _: None)
+
+        call_count = {"n": 0}
+
+        def fake_post(url, **kw):
+            call_count["n"] += 1
+            if "init" in url:
+                return FakeResponse(200, {"data": {"publish_id": "pub_abc"}, "error": {"code": "ok"}})
+            # status poll
+            return FakeResponse(200, {"data": {"status": "PUBLISH_COMPLETE",
+                                               "publicaly_available_post_id": ["post_xyz"]}})
+
+        monkeypatch.setattr("adapters.tiktok.httpx.post", fake_post)
+        ok, pid, err = tt.publish(_unit("tiktok_post", {
+            "video_url": "https://cdn.example.com/clip.mp4",
+            "caption": "test caption",
+        }))
+        assert ok is True
+        assert pid == "post_xyz"
+        assert err == ""
+
+    def test_publish_failed_status(self, monkeypatch):
+        monkeypatch.setenv("TIKTOK_ACCESS_TOKEN", "tok123")
+        import adapters.tiktok as tt
+        monkeypatch.setattr("adapters.tiktok.time.sleep", lambda _: None)
+
+        def fake_post(url, **kw):
+            if "init" in url:
+                return FakeResponse(200, {"data": {"publish_id": "pub_abc"}, "error": {"code": "ok"}})
+            return FakeResponse(200, {"data": {"status": "FAILED", "fail_reason": "video_too_long"}})
+
+        monkeypatch.setattr("adapters.tiktok.httpx.post", fake_post)
+        ok, _, err = tt.publish(_unit("tiktok_post", {"video_url": "https://x.com/v.mp4"}))
+        assert ok is False
+        assert "video_too_long" in err
+
+    def test_http_error(self, monkeypatch):
+        monkeypatch.setenv("TIKTOK_ACCESS_TOKEN", "tok123")
+        import adapters.tiktok as tt
+
+        def fake_post(url, **kw):
+            return FakeResponse(401, text="Unauthorized")
+
+        monkeypatch.setattr("adapters.tiktok.httpx.post", fake_post)
+        ok, _, err = tt.publish(_unit("tiktok_post", {"video_url": "https://x.com/v.mp4"}))
+        assert ok is False
+        assert "401" in err
+
+    def test_api_error_in_init_response(self, monkeypatch):
+        monkeypatch.setenv("TIKTOK_ACCESS_TOKEN", "tok123")
+        import adapters.tiktok as tt
+
+        def fake_post(url, **kw):
+            return FakeResponse(200, {"error": {"code": "invalid_param", "message": "bad request"}, "data": {}})
+
+        monkeypatch.setattr("adapters.tiktok.httpx.post", fake_post)
+        ok, _, err = tt.publish(_unit("tiktok_post", {"video_url": "https://x.com/v.mp4"}))
+        assert ok is False
+        assert "bad request" in err
+
+
+# ─── Facebook ───────────────────────────────────────────────────────────
+
+class TestFacebookAdapter:
+    def test_missing_creds(self, monkeypatch):
+        monkeypatch.delenv("FACEBOOK_PAGE_ID", raising=False)
+        monkeypatch.delenv("FACEBOOK_ACCESS_TOKEN", raising=False)
+        from adapters import facebook
+        ok, _, err = facebook.publish(_unit("facebook_post", {"text": "hello"}))
+        assert ok is False
+        assert "FACEBOOK_PAGE_ID" in err or "FACEBOOK_ACCESS_TOKEN" in err
+
+    def test_text_post_happy_path(self, monkeypatch):
+        monkeypatch.setenv("FACEBOOK_PAGE_ID", "pg123")
+        monkeypatch.setenv("FACEBOOK_ACCESS_TOKEN", "tok456")
+        import adapters.facebook as fb
+        monkeypatch.setattr("adapters.facebook.httpx.post",
+                            lambda url, **kw: FakeResponse(200, {"id": "pg123_post789"}))
+        ok, pid, err = fb.publish(_unit("facebook_post", {"text": "hello world"}))
+        assert ok is True
+        assert pid == "pg123_post789"
+        assert err == ""
+
+    def test_photo_post_happy_path(self, monkeypatch):
+        monkeypatch.setenv("FACEBOOK_PAGE_ID", "pg123")
+        monkeypatch.setenv("FACEBOOK_ACCESS_TOKEN", "tok456")
+        import adapters.facebook as fb
+        monkeypatch.setattr("adapters.facebook.httpx.post",
+                            lambda url, **kw: FakeResponse(200, {"post_id": "pg123_photo"}))
+        ok, pid, err = fb.publish(_unit("facebook_post", {
+            "text": "look at this",
+            "image_url": "https://cdn.example.com/img.jpg",
+        }))
+        assert ok is True
+        assert pid == "pg123_photo"
+
+    def test_video_post_happy_path(self, monkeypatch):
+        monkeypatch.setenv("FACEBOOK_PAGE_ID", "pg123")
+        monkeypatch.setenv("FACEBOOK_ACCESS_TOKEN", "tok456")
+        import adapters.facebook as fb
+        monkeypatch.setattr("adapters.facebook.httpx.post",
+                            lambda url, **kw: FakeResponse(200, {"id": "vid_001"}))
+        ok, pid, err = fb.publish(_unit("facebook_post", {
+            "text": "my video",
+            "video_url": "https://cdn.example.com/clip.mp4",
+        }))
+        assert ok is True
+        assert pid == "vid_001"
+
+    def test_empty_text_returns_error(self, monkeypatch):
+        monkeypatch.setenv("FACEBOOK_PAGE_ID", "pg123")
+        monkeypatch.setenv("FACEBOOK_ACCESS_TOKEN", "tok456")
+        from adapters import facebook
+        ok, _, err = facebook.publish(_unit("facebook_post", {}))
+        assert ok is False
+        assert "text" in err.lower()
+
+    def test_http_error(self, monkeypatch):
+        monkeypatch.setenv("FACEBOOK_PAGE_ID", "pg123")
+        monkeypatch.setenv("FACEBOOK_ACCESS_TOKEN", "tok456")
+        import adapters.facebook as fb
+        monkeypatch.setattr("adapters.facebook.httpx.post",
+                            lambda url, **kw: FakeResponse(400, text="OAuthException"))
+        ok, _, err = fb.publish(_unit("facebook_post", {"text": "hi"}))
+        assert ok is False
+        assert "400" in err
+
+    def test_per_account_creds(self, monkeypatch):
+        monkeypatch.setenv("FACEBOOK_PAGE_ID_BRAND", "pg_brand")
+        monkeypatch.setenv("FACEBOOK_ACCESS_TOKEN_BRAND", "tok_brand")
+        import adapters.facebook as fb
+
+        captured = {}
+
+        def fake_post(url, params=None, **kw):
+            captured["token"] = (params or {}).get("access_token")
+            return FakeResponse(200, {"id": "post_brand"})
+
+        monkeypatch.setattr("adapters.facebook.httpx.post", fake_post)
+        ok, _, _ = fb.publish(_unit("facebook_post", {"text": "hi"}), account="brand")
+        assert captured["token"] == "tok_brand"
