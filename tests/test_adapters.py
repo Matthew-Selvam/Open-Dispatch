@@ -1,4 +1,4 @@
-"""Adapter unit tests — fully mocked, no network or real credentials.
+"""Adapter unit tests - fully mocked, no network or real credentials.
 
 Every adapter is exercised across:
 - Missing-credentials path → (False, "", "<msg>") with descriptive error
@@ -119,6 +119,7 @@ class TestTelegramAdapter:
 
 class TestTwitterAdapter:
     def test_missing_creds_returns_error(self, monkeypatch):
+        monkeypatch.delenv("TWITTER_BACKEND", raising=False)
         for k in [
             "TWITTER_API_KEY", "TWITTER_API_SECRET",
             "TWITTER_ACCESS_TOKEN", "TWITTER_ACCESS_SECRET",
@@ -193,6 +194,105 @@ class TestTwitterAdapter:
         # Second + third tweets should reply to the previous
         assert calls[1]["in_reply_to_tweet_id"] == "1"
         assert calls[2]["in_reply_to_tweet_id"] == "2"
+
+    def test_xquik_backend_missing_creds_returns_error(self, monkeypatch):
+        monkeypatch.setenv("TWITTER_BACKEND", "xquik")
+        monkeypatch.delenv("XQUIK_API_KEY", raising=False)
+        monkeypatch.setenv("XQUIK_ACCOUNT", "@example")
+
+        from adapters import twitter
+
+        ok, _, err = twitter.publish(_unit("twitter_thread", {"tweets": ["hi"]}))
+        assert ok is False
+        assert "XQUIK_API_KEY" in err
+
+    def test_xquik_backend_posts_tweet(self, monkeypatch):
+        monkeypatch.setenv("TWITTER_BACKEND", "xquik")
+        monkeypatch.setenv("XQUIK_API_KEY", "key")
+        monkeypatch.setenv("XQUIK_ACCOUNT", "@example")
+        monkeypatch.setenv("XQUIK_BASE_URL", "https://example.test")
+
+        captured: list[dict[str, Any]] = []
+
+        def fake_post(*a, **k):
+            captured.append({"args": a, "kwargs": k})
+            return FakeResponse(200, {"tweetId": "100", "success": True})
+
+        from adapters import twitter
+
+        monkeypatch.setattr("adapters.twitter.httpx.post", fake_post)
+
+        ok, pid, err = twitter.publish(_unit("twitter_thread", {
+            "tweets": ["hello"],
+            "media_urls": ["https://cdn.example.test/image.png"],
+        }))
+
+        assert ok is True
+        assert pid == "100"
+        assert err == ""
+        assert captured[0]["args"][0] == "https://example.test/api/v1/x/tweets"
+        assert captured[0]["kwargs"]["headers"] == {"X-API-Key": "key"}
+        assert captured[0]["kwargs"]["json"] == {
+            "account": "@example",
+            "text": "hello",
+            "media": ["https://cdn.example.test/image.png"],
+        }
+
+    def test_xquik_backend_chains_replies(self, monkeypatch):
+        monkeypatch.setenv("TWITTER_BACKEND", "xquik")
+        monkeypatch.setenv("XQUIK_API_KEY", "key")
+        monkeypatch.setenv("XQUIK_ACCOUNT_BRAND", "@brand")
+
+        responses = iter([
+            FakeResponse(200, {"tweetId": "1", "success": True}),
+            FakeResponse(200, {"tweetId": "2", "success": True}),
+        ])
+        payloads: list[dict[str, Any]] = []
+
+        def fake_post(*a, **k):
+            payloads.append(k["json"])
+            return next(responses)
+
+        from adapters import twitter
+
+        monkeypatch.setattr("adapters.twitter.httpx.post", fake_post)
+
+        ok, pid, err = twitter.publish(
+            _unit("twitter_thread", {"tweets": ["first", "second"]}),
+            account="brand",
+        )
+
+        assert ok is True
+        assert pid == "1"
+        assert err == ""
+        assert payloads == [
+            {"account": "@brand", "text": "first"},
+            {"account": "@brand", "text": "second", "reply_to_tweet_id": "1"},
+        ]
+
+    def test_xquik_backend_does_not_chain_pending_write(self, monkeypatch):
+        monkeypatch.setenv("TWITTER_BACKEND", "xquik")
+        monkeypatch.setenv("XQUIK_API_KEY", "key")
+        monkeypatch.setenv("XQUIK_ACCOUNT", "@example")
+
+        payloads: list[dict[str, Any]] = []
+
+        def fake_post(*a, **k):
+            payloads.append(k["json"])
+            return FakeResponse(202, {"writeActionId": "pending-1", "success": True})
+
+        from adapters import twitter
+
+        monkeypatch.setattr("adapters.twitter.httpx.post", fake_post)
+
+        ok, pid, err = twitter.publish(
+            _unit("twitter_thread", {"tweets": ["first", "second"]}),
+        )
+
+        assert ok is False
+        assert pid == ""
+        assert "tweetId" in err
+        assert payloads == [{"account": "@example", "text": "first"}]
 
 
 # ─── Instagram ──────────────────────────────────────────────────────────
