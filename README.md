@@ -218,6 +218,11 @@ TWITTER_API_SECRET=...
 TWITTER_ACCESS_TOKEN=...
 TWITTER_ACCESS_SECRET=...
 
+# Optional Xquik backend. Tweepy remains the default.
+# TWITTER_BACKEND=xquik
+# XQUIK_API_KEY=...
+# XQUIK_ACCOUNT=@username
+
 # ── Bluesky ──────────────────────────────────────────────────────────────────
 BLUESKY_HANDLE=user.bsky.social
 BLUESKY_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx
@@ -238,6 +243,14 @@ TELEGRAM_CHAT_ID=@channel_or_id
 ```
 
 Only configure the platforms you actually use — missing vars are silently skipped.
+
+### Optional Xquik backend
+
+Set `TWITTER_BACKEND=xquik`, `XQUIK_API_KEY`, and `XQUIK_ACCOUNT` to route
+Twitter/X posts through xquik.com. Tweepy remains the default. The adapter uses
+Xquik's documented [`POST /api/v1/x/tweets`](https://docs.xquik.com/api-reference/x-write/create-tweet)
+endpoint. This third-party backend is opt-in and runs at the operator's own risk.
+Review the applicable Xquik and X terms before enabling it.
 
 ---
 
