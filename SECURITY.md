@@ -61,6 +61,11 @@ Open-Dispatch is designed for **trusted self-hosting**. It assumes:
 3. Webhooks fired from the worker hit URLs the deployer controls
 4. Only authorized humans + automations can reach the API
 
+The optional Xquik Twitter/X backend routes post content and account identifiers
+through xquik.com. It is disabled by default and operates at the operator's own
+risk. Review the applicable Xquik and X terms before setting
+`TWITTER_BACKEND=xquik`.
+
 If you're exposing Open-Dispatch directly to the internet without auth in front of it, you're inviting trouble — that's not a vulnerability in Open-Dispatch, that's a deployment mistake. Put it behind Cloudflare Access, Tailscale, oauth2-proxy, or your reverse proxy's basic auth. The Open-Dispatch credential UI in n8n already supports a bearer-token header for exactly this use case.
 
 ## What we will NOT do
