@@ -25,6 +25,21 @@ def test_healthz(client):
     assert r.json()["status"] == "ok"
 
 
+def test_platforms_configured_covers_new_adapters(client, monkeypatch):
+    """Health dashboard + composer dots must recognize tiktok/facebook/discord creds."""
+    from api import app as appmod
+    for var in ("TIKTOK_ACCESS_TOKEN", "FACEBOOK_PAGE_ID", "FACEBOOK_ACCESS_TOKEN",
+                "DISCORD_WEBHOOK_URL", "TWITTER_API_KEY", "TWITTER_ACCESS_TOKEN"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("TIKTOK_ACCESS_TOKEN", "tok")
+    monkeypatch.setenv("FACEBOOK_PAGE_ID", "123")
+    monkeypatch.setenv("FACEBOOK_ACCESS_TOKEN", "tok")
+    monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/1/x")
+    configured = appmod._platforms_configured()
+    assert {"tiktok", "facebook", "discord"} <= configured
+    assert "twitter" not in configured
+
+
 def test_dispatch_validation_error(client):
     r = client.post("/dispatch", json={"targets": [], "formats": {}})
     assert r.status_code == 400

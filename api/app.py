@@ -75,6 +75,9 @@ def _platforms_configured() -> set[str]:
         "linkedin":  ("LINKEDIN_ACCESS_TOKEN", "LINKEDIN_AUTHOR_URN"),
         "threads":   ("THREADS_USER_ID", "THREADS_ACCESS_TOKEN"),
         "youtube":   ("YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"),
+        "tiktok":    ("TIKTOK_ACCESS_TOKEN",),
+        "facebook":  ("FACEBOOK_PAGE_ID", "FACEBOOK_ACCESS_TOKEN"),
+        "discord":   ("DISCORD_WEBHOOK_URL",),
     }
     return {
         platform for platform, envs in checks.items()
