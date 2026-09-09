@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import os
@@ -585,9 +586,9 @@ async def compose_adapt_htmx(
         formats = await adapt_caption_async(text, platforms)
     except AdaptError as e:
         return HTMLResponse(
-            f'<div class="alert alert-error"><strong>Adapt failed:</strong> {e}</div>',
+            f'<div class="alert alert-error"><strong>Adapt failed:</strong> {html.escape(str(e))}</div>',
         )
-    pretty = json.dumps(formats, indent=2, ensure_ascii=False)
+    pretty = html.escape(json.dumps(formats, indent=2, ensure_ascii=False))
     return HTMLResponse(
         '<div class="alert alert-success">'
         "<strong>Adapted.</strong> Paste this into the Advanced JSON box "

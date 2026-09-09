@@ -190,3 +190,16 @@ def test_compose_adapt_htmx_returns_html(client):
     )
     assert r.status_code == 200
     assert "Adapted" in r.text or "adapted" in r.text.lower() or "alert" in r.text.lower()
+
+
+def test_compose_adapt_htmx_escapes_html_in_output(client):
+    """XSS regression: adapted text must be HTML-escaped in the fragment."""
+    r = client.post(
+        "/_compose-adapt",
+        data={"text": "<script>alert(1)</script> hello", "platforms": ["bluesky"]},
+        headers={"Accept": "text/html"},
+    )
+    assert r.status_code == 200
+    # The raw tag must never appear verbatim — only its escaped form.
+    assert "<script>alert(1)</script>" not in r.text
+    assert "&lt;script&gt;" in r.text
