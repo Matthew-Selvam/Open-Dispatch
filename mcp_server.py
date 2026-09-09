@@ -47,7 +47,7 @@ mcp = FastMCP(
     instructions=(
         "Open-Dispatch is a self-hosted social media cross-poster. "
         "Use dispatch() to post content to one or many platforms in one call. "
-        "Platforms: twitter, bluesky, instagram, telegram, threads, linkedin, youtube, tiktok, facebook. "
+        "Platforms: twitter, bluesky, instagram, telegram, threads, linkedin, youtube, tiktok, facebook, discord. "
         "Target syntax: 'platform' or 'platform:account'. "
         "Use get_queue() to monitor post status, retry_row() to retry failures."
     ),
@@ -94,7 +94,7 @@ def dispatch(
     Args:
         targets: List of platform targets, e.g. ["twitter", "bluesky", "telegram:channel"].
                  Supported platforms: twitter, bluesky, instagram, telegram, threads,
-                 linkedin, youtube, tiktok, facebook.
+                 linkedin, youtube, tiktok, facebook, discord.
         formats: Dict of format keys → payloads. Each platform needs its own key:
                  - twitter_thread:   {"tweets": ["text1", "text2"]}
                  - bluesky_post:     {"text": "..."}
@@ -104,6 +104,7 @@ def dispatch(
                  - linkedin_post:    {"text": "..."}
                  - tiktok_post:      {"video_url": "https://...", "caption": "..."}
                  - facebook_post:    {"text": "...", "image_url": "https://..."}
+                 - discord_message:  {"content": "...", "embeds": [{...}]}
         scheduled_for: ISO-8601 datetime to schedule post (omit to post immediately).
         category: Optional label for grouping posts (default "general").
         webhook_url: Optional URL to notify when post succeeds or fails.
@@ -208,9 +209,19 @@ def adapt_caption(text: str, platforms: list[str]) -> str:
         Per-platform captions as formatted text.
     """
     data = _post("/ai/adapt", {"text": text, "platforms": platforms})
+    formats = data.get("formats") or {}
     lines = ["Adapted captions:"]
-    for platform, caption in data.items():
-        lines.append(f"\n{platform.upper()}:\n{caption}")
+    for fmt_key, payload in formats.items():
+        # Show the human-readable text field of each format payload
+        if isinstance(payload, dict):
+            if "tweets" in payload and isinstance(payload["tweets"], list):
+                text_out = "\n".join(str(t) for t in payload["tweets"])
+            else:
+                text_out = str(payload.get("text") or payload.get("caption")
+                               or payload.get("description") or payload)
+        else:
+            text_out = str(payload)
+        lines.append(f"\n{fmt_key}:\n{text_out}")
     return "\n".join(lines)
 
 
@@ -227,6 +238,7 @@ def list_platforms() -> str:
         ("youtube",   "youtube_short",    "video_path: str, title: str, description?: str"),
         ("tiktok",    "tiktok_post",      "video_url: str, caption?: str, privacy?: str"),
         ("facebook",  "facebook_post",    "text: str, image_url?: str, video_url?: str, link?: str"),
+        ("discord",   "discord_message",  "content: str, username?: str, avatar_url?: str, embeds?: list"),
     ]
     lines = ["Supported platforms:\n"]
     for platform, fmt_key, fields in platforms:
