@@ -755,6 +755,23 @@ async def media_transcode(request: Request) -> Any:
 
 # ─── Bulk CSV import ──────────────────────────────────────────────────────
 
+# Canonical text field per format key — used to auto-wrap plain-text CSV
+# cells into the payload shape each adapter reads. Kept explicit so adding
+# an adapter means adding one row here, not another elif branch.
+_TEXT_FIELD_BY_FORMAT: dict[str, str] = {
+    "twitter_thread":   "tweets",
+    "bluesky_post":     "text",
+    "telegram_message": "text",
+    "linkedin_post":    "text",
+    "threads_post":     "text",
+    "facebook_post":    "text",
+    "discord_message":  "content",
+    "instagram_post":   "caption",
+    "tiktok_post":      "caption",
+    "youtube_short":    "title",
+}
+
+
 @app.post("/dispatch/bulk", status_code=202)
 async def dispatch_bulk(request: Request) -> JSONResponse:
     """Bulk-enqueue posts from a CSV upload.
@@ -813,11 +830,9 @@ async def dispatch_bulk(request: Request) -> JSONResponse:
             if not isinstance(payload, dict):
                 raise ValueError("not a dict")
         except (json.JSONDecodeError, ValueError):
-            # Treat as plain text — wrap using common field names per format_key
-            text_field = "text" if "bluesky" in format_key or "telegram" in format_key \
-                or "linkedin" in format_key or "threads" in format_key or "facebook" in format_key \
-                else "tweets" if "twitter" in format_key \
-                else "caption"
+            # Treat as plain text — wrap using the canonical text field for
+            # each format key (matches what the adapters actually read).
+            text_field = _TEXT_FIELD_BY_FORMAT.get(format_key, "text")
             payload = {text_field: [text_or_json] if text_field == "tweets" else text_or_json}
 
         unit = ContentUnit(

@@ -105,3 +105,39 @@ def test_purge_rejects_queued(client):
     """Can't purge active rows — only published or dead."""
     r = client.post("/_purge?status=queued")
     assert r.status_code == 400
+
+
+def test_bulk_import_wraps_plain_text_correctly(client):
+    """Plain-text CSV cells must land in the field each adapter reads."""
+    csv_body = (
+        "targets,format_key,text_or_json,scheduled_for\n"
+        "twitter,twitter_thread,hello tweeps,\n"
+        "discord,discord_message,hello discord,\n"
+        "facebook,facebook_post,hello fb,\n"
+        "instagram,instagram_post,hello ig,\n"
+    )
+    r = client.post("/dispatch/bulk", content=csv_body,
+                    headers={"Content-Type": "text/csv"})
+    assert r.status_code == 202
+    j = r.json()
+    assert j["imported"] == 4, j.get("error_details")
+    assert j["errors"] == 0
+    rows = client.get("/queue").json()["rows"]
+    fmt_by_platform = {r2["platform"]: r2["unit"]["formats"] for r2 in rows}
+    assert fmt_by_platform["twitter:default"]["twitter_thread"]["tweets"] == ["hello tweeps"]
+    assert fmt_by_platform["discord:default"]["discord_message"]["content"] == "hello discord"
+    assert fmt_by_platform["facebook:default"]["facebook_post"]["text"] == "hello fb"
+    assert fmt_by_platform["instagram:default"]["instagram_post"]["caption"] == "hello ig"
+
+
+def test_bulk_import_rejects_bad_rows_without_blocking_good_ones(client):
+    csv_body = (
+        "twitter,twitter_thread,ok row,\n"
+        "no-such-platform,x_key,bad row,\n"
+    )
+    r = client.post("/dispatch/bulk", content=csv_body,
+                    headers={"Content-Type": "text/csv"})
+    assert r.status_code == 202
+    j = r.json()
+    assert j["imported"] == 1
+    assert j["errors"] == 1
