@@ -57,6 +57,10 @@ def cmd_send(args: argparse.Namespace) -> int:
                     formats["instagram_post"] = {"caption": args.text}
                 elif plat == "threads":
                     formats["threads_post"] = {"text": args.text}
+                elif plat == "facebook":
+                    formats["facebook_post"] = {"text": args.text}
+                elif plat == "discord":
+                    formats["discord_message"] = {"content": args.text}
                 elif plat == "youtube":
                     # YouTube needs a video_path — text-only CLI mode can't
                     # supply one. Use `dispatch send --file unit.json` for
