@@ -118,6 +118,25 @@ def test_adapt_caption_raises_on_no_valid_platforms():
         asyncio.run(adapt_caption_async("hello", ["myspace", "orkut"]))
 
 
+def test_sync_adapt_caption_works_without_loop():
+    from ai.caption_adapter import adapt_caption
+    out = adapt_caption("hello world", ["twitter", "bluesky"])
+    assert "twitter_thread" in out
+    assert "bluesky_post" in out
+
+
+def test_sync_adapt_caption_fails_loudly_inside_loop():
+    """Old code crashed with a confusing run_until_complete error; now a clear one."""
+    from ai.caption_adapter import adapt_caption
+    import asyncio as _aio
+
+    async def call_it():
+        return adapt_caption("hello", ["twitter"])
+
+    with pytest.raises(RuntimeError, match="adapt_caption_async"):
+        _aio.run(call_it())
+
+
 def test_adapt_caption_heuristic_explicit(monkeypatch):
     # Force heuristic so the test never makes a network call
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)

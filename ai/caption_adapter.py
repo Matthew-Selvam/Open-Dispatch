@@ -395,12 +395,25 @@ def adapt_caption(
     *,
     provider: str | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """Sync wrapper for adapt_caption_async."""
+    """Sync wrapper for adapt_caption_async.
+
+    Works when called from a thread with no running event loop (CLI,
+    scripts, worker threads). If the calling code is itself running on
+    an event loop (e.g. inside an async FastAPI handler), blocking is
+    impossible — this raises a clear RuntimeError instead of the old
+    behaviour (a guaranteed 'loop is already running' crash from
+    run_until_complete). Use adapt_caption_async() there.
+    """
     import asyncio
+
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(adapt_caption_async(source, platforms, provider=provider))
-    # If a loop is already running (e.g. inside FastAPI), use run_until_complete
-    # on a new task — but the caller should really use the async version.
-    return loop.run_until_complete(adapt_caption_async(source, platforms, provider=provider))
+        pass  # no loop in this thread — safe to run one
+    else:
+        raise RuntimeError(
+            "adapt_caption() called from inside a running event loop — "
+            "use await adapt_caption_async(...) instead"
+        )
+
+    return asyncio.run(adapt_caption_async(source, platforms, provider=provider))
