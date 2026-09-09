@@ -99,6 +99,8 @@ def _build_formats(text: str, formats_json: str | None) -> dict[str, Any]:
         "instagram_post":    {"caption": text},
         "linkedin_post":     {"text": text},
         "threads_post":      {"text": text},
+        "facebook_post":     {"text": text},
+        "discord_message":   {"content": text},
         # youtube_short omitted on purpose — needs a video_path the form
         # composer can't supply yet. Use AI adapter + Advanced JSON for now.
     }

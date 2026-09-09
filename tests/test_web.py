@@ -54,6 +54,27 @@ def test_compose_submit_creates_row(client):
     assert any(r2["platform"] == "telegram:default" for r2 in rows)
 
 
+def test_compose_submit_discord_and_facebook(client):
+    """The composer must produce usable default formats for the two newest adapters."""
+    r = client.post(
+        "/_compose",
+        data={"text": "hello world", "platforms": ["discord", "facebook"]},
+        headers={"Accept": "text/html"},
+    )
+    assert r.status_code == 200
+    assert "Dispatched" in r.text or "dispatched" in r.text.lower()
+    rows = client.get("/queue").json()["rows"]
+    by_platform = {r2["platform"] for r2 in rows}
+    assert "discord:default" in by_platform
+    assert "facebook:default" in by_platform
+    # The enqueued units must carry the correct default format payloads
+    for r2 in rows:
+        if r2["platform"] == "discord:default":
+            assert r2["unit"]["formats"]["discord_message"]["content"] == "hello world"
+        if r2["platform"] == "facebook:default":
+            assert r2["unit"]["formats"]["facebook_post"]["text"] == "hello world"
+
+
 def test_compose_submit_validation_error(client):
     r = client.post(
         "/_compose",
