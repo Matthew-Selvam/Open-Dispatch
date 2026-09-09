@@ -75,10 +75,16 @@ def _read_all() -> list[dict]:
         return []
     rows = []
     with JSONL_PATH.open() as f:
-        for line in f:
+        for lineno, line in enumerate(f, start=1):
             line = line.strip()
             if line:
-                rows.append(json.loads(line))
+                try:
+                    rows.append(json.loads(line))
+                except json.JSONDecodeError:
+                    # A single torn write (crash mid-append, disk issue) must
+                    # not take the whole queue down — skip the bad line but
+                    # keep serving everything else.
+                    log.warning("skipping corrupt queue line %d in %s", lineno, JSONL_PATH)
     return rows
 
 
@@ -96,7 +102,17 @@ class JsonlQueue:
     def enqueue(self, unit_dict: dict, platform_key: str, scheduled_for: str) -> str:
         row = _new_row(unit_dict, platform_key, scheduled_for)
         with _LOCK:
+            # If the file doesn't end with a newline (torn write from a crash),
+            # start a fresh line — otherwise this row concatenates onto the
+            # corrupt one and BOTH become unreadable.
+            needs_nl = False
+            if JSONL_PATH.exists() and JSONL_PATH.stat().st_size > 0:
+                with JSONL_PATH.open("rb") as f:
+                    f.seek(-1, 2)
+                    needs_nl = f.read(1) != b"\n"
             with JSONL_PATH.open("a") as f:
+                if needs_nl:
+                    f.write("\n")
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
         return row["id"]
 

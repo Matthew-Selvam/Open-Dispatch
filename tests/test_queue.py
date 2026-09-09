@@ -39,6 +39,42 @@ def test_due(tmp_path, monkeypatch):
     assert due[0]["scheduled_for"] == past
 
 
+def test_corrupt_line_doesnt_brick_queue(tmp_path, monkeypatch):
+    """One bad line in queue.jsonl must not make every queue op raise."""
+    q = _fresh_queue(tmp_path, monkeypatch)
+    queue = q.get_queue()
+    queue.enqueue({"x": 1}, "telegram:default", "2020-01-01T00:00:00+00:00")
+    # Simulate a corrupted line (bad write, disk issue)
+    with q.JSONL_PATH.open("a") as f:
+        f.write('{"id": "torn", "unit": {"x":\n')
+    # Reads still work and return the good row
+    rows = queue.list_all()
+    assert len(rows) == 1
+    assert rows[0]["platform"] == "telegram:default"
+    # New enqueues still work
+    queue.enqueue({"x": 2}, "twitter:default", "2020-01-01T00:00:00+00:00")
+    assert len(queue.list_all()) == 2
+    # A full rewrite (any _update) drops the corrupt line for good
+    queue._update(rows[0]["id"], {"status": "published"})
+    assert len(queue.list_all()) == 2
+    assert not queue.get("torn")
+
+
+def test_torn_write_without_newline_doesnt_eat_next_row(tmp_path, monkeypatch):
+    """A crash mid-append leaves a half line with no trailing \\n; the next
+    enqueue must start a fresh line instead of concatenating onto it."""
+    q = _fresh_queue(tmp_path, monkeypatch)
+    queue = q.get_queue()
+    queue.enqueue({"x": 1}, "telegram:default", "2020-01-01T00:00:00+00:00")
+    # Torn write: half a JSON line, NO trailing newline
+    with q.JSONL_PATH.open("a") as f:
+        f.write('{"id": "torn", "unit": {')
+    queue.enqueue({"x": 2}, "twitter:default", "2020-01-01T00:00:00+00:00")
+    rows = queue.list_all()
+    assert len(rows) == 2
+    assert {r["platform"] for r in rows} == {"telegram:default", "twitter:default"}
+
+
 def test_status_transitions(tmp_path, monkeypatch):
     q = _fresh_queue(tmp_path, monkeypatch)
     queue = q.get_queue()
