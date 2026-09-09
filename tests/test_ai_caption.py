@@ -182,6 +182,12 @@ def test_ai_adapt_rejects_empty_platforms(client):
     assert r.status_code == 400
 
 
+def test_ai_adapt_rejects_non_object_body(client):
+    r = client.post("/ai/adapt", content=b'"just a string"',
+                    headers={"Content-Type": "application/json"})
+    assert r.status_code == 400
+
+
 def test_compose_adapt_htmx_returns_html(client):
     r = client.post(
         "/_compose-adapt",

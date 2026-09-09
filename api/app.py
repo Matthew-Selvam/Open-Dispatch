@@ -257,7 +257,12 @@ def healthz(request: Request) -> Any:
 
 @app.post("/dispatch", status_code=202)
 async def dispatch(request: Request) -> JSONResponse:
-    body = await request.json()
+    try:
+        body = await request.json()
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"invalid JSON body: {e}") from e
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="JSON body must be an object")
     unit = ContentUnit.from_dict(body)
     errs = validate(unit)
     if errs:
@@ -556,6 +561,8 @@ async def ai_adapt(request: Request) -> dict[str, Any]:
     OPENROUTER_API_KEY set, else heuristic (no LLM).
     """
     body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="JSON body must be an object")
     text = (body.get("text") or "").strip()
     platforms = body.get("platforms") or []
     provider = body.get("provider")
@@ -563,7 +570,6 @@ async def ai_adapt(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="text is required")
     if not isinstance(platforms, list) or not platforms:
         raise HTTPException(status_code=400, detail="platforms must be a non-empty list")
-
     try:
         formats = await adapt_caption_async(text, platforms, provider=provider)
     except AdaptError as e:

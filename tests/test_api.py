@@ -45,6 +45,20 @@ def test_dispatch_validation_error(client):
     assert r.status_code == 400
 
 
+def test_dispatch_malformed_json_returns_400(client):
+    r = client.post("/dispatch", content=b"{not json",
+                    headers={"Content-Type": "application/json"})
+    assert r.status_code == 400
+    assert "invalid JSON body" in r.text
+
+
+def test_dispatch_non_object_json_returns_400(client):
+    r = client.post("/dispatch", content=b'["a list"]',
+                    headers={"Content-Type": "application/json"})
+    assert r.status_code == 400
+    assert "must be an object" in r.text
+
+
 def test_dispatch_enqueues(client):
     body = {
         "targets": ["telegram:main"],
