@@ -56,6 +56,16 @@ PLATFORM_CRED_MAP: dict[str, dict[str, str]] = {
         "client_secret": "YOUTUBE_CLIENT_SECRET",
         "refresh_token": "YOUTUBE_REFRESH_TOKEN",
     },
+    "tiktok": {
+        "access_token": "TIKTOK_ACCESS_TOKEN",
+    },
+    "facebook": {
+        "page_id":      "FACEBOOK_PAGE_ID",
+        "access_token": "FACEBOOK_ACCESS_TOKEN",
+    },
+    "discord": {
+        "webhook_url": "DISCORD_WEBHOOK_URL",
+    },
 }
 
 # Human-readable labels for the form
@@ -74,12 +84,15 @@ CRED_LABELS: dict[str, str] = {
     "client_id":     "OAuth Client ID",
     "client_secret": "OAuth Client Secret",
     "refresh_token": "OAuth Refresh Token",
+    "page_id":       "Facebook Page ID (numeric)",
+    "webhook_url":   "Discord Webhook URL",
 }
 
 # Fields that should be rendered as password inputs
 PASSWORD_FIELDS = {
     "api_secret", "access_token", "access_secret", "app_password",
     "bot_token", "token", "client_secret", "refresh_token",
+    "webhook_url",
 }
 
 # Nice emoji per platform
@@ -90,7 +103,10 @@ PLATFORM_EMOJI: dict[str, str] = {
     "instagram": "📷",
     "linkedin":  "💼",
     "threads":   "🧵",
-    "youtube":   "▶️",
+    "youtube":    "▶️",
+    "tiktok":     "🎵",
+    "facebook":   "📘",
+    "discord":    "💬",
 }
 
 PRESET_COLORS = ["#4ade80", "#60a5fa", "#f472b6", "#fb923c", "#a78bfa", "#34d399", "#facc15"]
