@@ -6,7 +6,7 @@ Each queue row:
       "unit": {...ContentUnit dict...},
       "platform": "twitter:pol",
       "scheduled_for": "ISO",
-      "status": "queued|publishing|published|failed|dead",
+      "status": "queued|publishing|published|failed|dead|canceled",
       "attempts": 0,
       "post_id": null,
       "last_error": null,
@@ -81,6 +81,7 @@ class QueueProtocol(Protocol):
     def mark_published(self, row_id: str, post_id: str) -> None: ...
     def mark_failed(self, row_id: str, err: str, dead: bool = False) -> None: ...
     def delete(self, row_id: str) -> bool: ...
+    def cancel_campaign(self, unit_id: str) -> list[dict]: ...
     def _update(self, row_id: str, patch: dict[str, Any]) -> None: ...
 
 
@@ -187,6 +188,24 @@ class JsonlQueue:
                 return False
             _write_all(new)
         return True
+
+    def cancel_campaign(self, unit_id: str) -> list[dict]:
+        """Flip every still-queued row of a campaign to 'canceled'.
+
+        Returns the canceled rows. Rows already publishing/published/dead are
+        left alone — cancel is best-effort before the post goes live.
+        """
+        canceled: list[dict] = []
+        with _LOCK:
+            rows = _read_all()
+            for r in rows:
+                if (r.get("unit") or {}).get("id") == unit_id and r["status"] == "queued":
+                    r["status"] = "canceled"
+                    r["updated_at"] = _now()
+                    canceled.append(r)
+            if canceled:
+                _write_all(rows)
+        return canceled
 
 
 def _new_row(unit_dict: dict, platform_key: str, scheduled_for: str) -> dict:
@@ -330,6 +349,27 @@ class RedisQueue:
         pipe.zrem(self._due_key(), row_id)
         results = pipe.execute()
         return bool(results[0])  # 1 if key existed and was deleted
+
+    def cancel_campaign(self, unit_id: str) -> list[dict]:
+        """Flip every still-queued row of a campaign to 'canceled'.
+
+        Status-guarded like mark_publishing: a row a worker already grabbed
+        (publishing/published/dead) is never canceled mid-publish. The same
+        read-then-write window the rest of this backend has is accepted here.
+        """
+        canceled: list[dict] = []
+        for rid in self._r.smembers(self._all_key()):
+            row_id = rid.decode() if isinstance(rid, bytes) else rid
+            row = self._read(row_id)
+            if not row or (row.get("unit") or {}).get("id") != unit_id:
+                continue
+            if row.get("status") != "queued":
+                continue
+            row["status"] = "canceled"
+            self._write(row)
+            self._r.zrem(self._due_key(), row_id)
+            canceled.append(row)
+        return canceled
 
 
 # ─── Postgres backend ──────────────────────────────────────────────────────
@@ -498,6 +538,22 @@ class PostgresQueue:
         with self._conn() as conn, conn.cursor() as cur:
             cur.execute(sql, (row_id,))
             return cur.rowcount > 0
+
+    def cancel_campaign(self, unit_id: str) -> list[dict]:
+        """Flip every still-queued row of a campaign to 'canceled'.
+
+        One atomic UPDATE ... RETURNING — the status guard lives in SQL, so
+        concurrent workers and this cancel can never interleave half-states.
+        """
+        sql = f"""
+            UPDATE {self.TABLE}
+            SET status = 'canceled', updated_at = now()
+            WHERE (unit->>'id') = %s AND status = 'queued'
+            RETURNING *
+        """
+        with self._conn() as conn, conn.cursor() as cur:
+            cur.execute(sql, (unit_id,))
+            return [self._row_to_dict(r) for r in cur.fetchall()]
 
 
 # ─── Factory ──────────────────────────────────────────────────────────────

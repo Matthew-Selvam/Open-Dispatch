@@ -240,6 +240,32 @@ def test_mark_failed_dead_sets_dead_status():
     assert params[0] == "dead"
 
 
+def test_cancel_campaign_generates_guarded_update_returning():
+    state = {}
+
+    def factory():
+        c = FakeConn()
+        c.cursor_result = [
+            # (id, unit, platform, scheduled_for, status, attempts, post_id, last_error, created_at, updated_at)
+            ("11111111-1111-1111-1111-111111111111", {"id": "camp-9"}, "twitter:default",
+             None, "canceled", 0, None, None, None, None),
+        ]
+        state["last"] = c
+        return c
+
+    q = PostgresQueue(factory)
+    state["last"].executions.clear()  # type: ignore[union-attr]
+    rows = q.cancel_campaign("camp-9")
+    sql, params = state["last"].executions[0]  # type: ignore[union-attr]
+    assert "SET status = 'canceled'" in sql
+    assert "(unit->>'id') = %s" in sql
+    assert "status = 'queued'" in sql  # the guard: only still-queued rows
+    assert "RETURNING *" in sql
+    assert params == ("camp-9",)
+    assert rows[0]["status"] == "canceled"
+    assert rows[0]["platform"] == "twitter:default"
+
+
 def test_factory_falls_back_when_database_url_unreachable(monkeypatch):
     """DATABASE_URL set but psycopg2 import or connect fails → JSONL."""
     monkeypatch.setenv("DATABASE_URL", "postgres://nonexistent.invalid:5432/x")

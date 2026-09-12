@@ -143,3 +143,39 @@ def test_delete_nonexistent(tmp_path, monkeypatch):
     q = _fresh_queue(tmp_path, monkeypatch)
     queue = q.get_queue()
     assert queue.delete("no-such-id") is False
+
+
+# ─── Campaigns (unit_id fan-out tracking + cancel) ──────────────────────
+
+def _fan_out(queue, unit_id, platforms):
+    """Enqueue the same unit dict under several platform rows (what
+    /dispatch does) and return the row ids."""
+    unit = {"id": unit_id, "targets": list(platforms), "formats": {"telegram_message": {"text": "x"}}}
+    return [queue.enqueue(unit, f"{p}:default", "2020-01-01T00:00:00+00:00")
+            for p in platforms]
+
+
+def test_campaign_cancel_flips_only_queued_rows(tmp_path, monkeypatch):
+    q = _fresh_queue(tmp_path, monkeypatch)
+    queue = q.get_queue()
+    rid_a, rid_b, rid_pub = _fan_out(queue, "camp-1", ["telegram", "bluesky", "twitter"])
+    # one row already published — must be untouched by cancel
+    queue.mark_publishing(rid_pub)
+    queue.mark_published(rid_pub, "post-77")
+
+    canceled = queue.cancel_campaign("camp-1")
+    assert {r["id"] for r in canceled} == {rid_a, rid_b}
+    assert all(r["status"] == "canceled" for r in canceled)
+    assert queue.get(rid_pub)["status"] == "published"
+    # canceled rows leave the due set entirely
+    due = queue.list_due("2099-01-01T00:00:00+00:00")
+    assert rid_a not in {r["id"] for r in due} and rid_b not in {r["id"] for r in due}
+
+
+def test_campaign_cancel_unknown_unit_is_empty(tmp_path, monkeypatch):
+    q = _fresh_queue(tmp_path, monkeypatch)
+    queue = q.get_queue()
+    _fan_out(queue, "camp-1", ["telegram"])
+    assert queue.cancel_campaign("no-such-campaign") == []
+    # untouched campaign still queued & due
+    assert queue.get(queue.list_all()[0]["id"])["status"] == "queued"
