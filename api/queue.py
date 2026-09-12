@@ -54,6 +54,22 @@ def _iso_to_epoch(iso: str) -> float:
     return datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
 
 
+def _row_due(row: dict, due_epoch: float) -> bool:
+    """Is this row's scheduled_for at or before `due_epoch`?
+
+    Compares real instants, not ISO strings: '21:00+05:30' is an hour *before*
+    '16:00+00:00' but lexicographically after it. A row whose scheduled_for we
+    can't parse is treated as due — same as a plain 'now' — so the worker
+    surfaces it instead of the queue silently dead-ending it.
+    """
+    try:
+        return _iso_to_epoch(row["scheduled_for"]) <= due_epoch
+    except (ValueError, TypeError, KeyError):
+        log.warning("row %s has unparseable scheduled_for %r; treating as due",
+                    row.get("id", "?"), row.get("scheduled_for"))
+        return True
+
+
 # ─── Shared protocol (so worker code can target either backend) ───────────
 
 class QueueProtocol(Protocol):
@@ -131,10 +147,11 @@ class JsonlQueue:
         return None
 
     def list_due(self, now_iso: str) -> list[dict]:
+        due_epoch = _iso_to_epoch(now_iso)
         with _LOCK:
             return [
                 r for r in _read_all()
-                if r["status"] == "queued" and r["scheduled_for"] <= now_iso
+                if r["status"] == "queued" and _row_due(r, due_epoch)
             ]
 
     def _update(self, row_id: str, patch: dict[str, Any]) -> None:

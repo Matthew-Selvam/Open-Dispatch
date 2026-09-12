@@ -39,6 +39,33 @@ def test_due(tmp_path, monkeypatch):
     assert due[0]["scheduled_for"] == past
 
 
+def test_due_compares_instants_not_strings(tmp_path, monkeypatch):
+    """Scheduled rows must be due by their real instant, whatever the offset.
+
+    The old code compared ISO strings, so `21:00+05:30` (15:30Z) sat in the
+    queue forever past 16:00Z, and `12:00-05:00` (17:00Z) fired an hour early.
+    """
+    q = _fresh_queue(tmp_path, monkeypatch)
+    queue = q.get_queue()
+    now = "2026-09-12T16:00:00+00:00"
+    overdue_ist = "2026-09-12T21:00:00+05:30"   # 15:30Z — due
+    future_est = "2026-09-12T12:00:00-05:00"    # 17:00Z — not due yet
+    queue.enqueue({"x": 1}, "telegram:default", overdue_ist)
+    queue.enqueue({"x": 2}, "telegram:default", future_est)
+    due = queue.list_due(now)
+    assert [r["scheduled_for"] for r in due] == [overdue_ist]
+
+
+def test_due_handles_z_suffix(tmp_path, monkeypatch):
+    """'...Z' vs '+00:00' are the same instant; string compare gets it wrong."""
+    q = _fresh_queue(tmp_path, monkeypatch)
+    queue = q.get_queue()
+    queue.enqueue({"x": 1}, "telegram:default", "2026-09-12T15:59:00Z")
+    queue.enqueue({"x": 2}, "telegram:default", "2026-09-12T16:01:00Z")
+    due = queue.list_due("2026-09-12T16:00:00+00:00")
+    assert [r["scheduled_for"] for r in due] == ["2026-09-12T15:59:00Z"]
+
+
 def test_corrupt_line_doesnt_brick_queue(tmp_path, monkeypatch):
     """One bad line in queue.jsonl must not make every queue op raise."""
     q = _fresh_queue(tmp_path, monkeypatch)
