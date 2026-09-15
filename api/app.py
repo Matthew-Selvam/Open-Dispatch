@@ -87,10 +87,10 @@ async def security_middleware(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "same-origin"
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and not request.headers.get("authorization"):
+        response.headers["Cache-Control"] = "no-store"
     return response
 
-
-# ─── Helpers ──────────────────────────────────────────────────────────────
 
 def _platforms_configured() -> set[str]:
     """Which platforms have at least the canonical credential env var set?"""
