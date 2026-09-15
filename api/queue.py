@@ -77,9 +77,10 @@ class QueueProtocol(Protocol):
     def list_all(self, status: str | None = None) -> list[dict]: ...
     def get(self, row_id: str) -> dict | None: ...
     def list_due(self, now_iso: str) -> list[dict]: ...
-    def mark_publishing(self, row_id: str) -> None: ...
-    def mark_published(self, row_id: str, post_id: str) -> None: ...
-    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> None: ...
+    def mark_publishing(self, row_id: str) -> bool: ...
+    def mark_published(self, row_id: str, post_id: str) -> bool: ...
+    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> bool: ...
+    def retry(self, row_id: str) -> bool: ...
     def delete(self, row_id: str) -> bool: ...
     def cancel_campaign(self, unit_id: str) -> list[dict]: ...
     def _update(self, row_id: str, patch: dict[str, Any]) -> None: ...
@@ -165,7 +166,7 @@ class JsonlQueue:
                     break
             _write_all(rows)
 
-    def mark_publishing(self, row_id: str) -> None:
+    def mark_publishing(self, row_id: str) -> bool:
         with _LOCK:
             rows = _read_all()
             for r in rows:
@@ -173,19 +174,39 @@ class JsonlQueue:
                     r["status"] = "publishing"
                     r["updated_at"] = _now()
                     _write_all(rows)
-                    return
+                    return True
+        return False
 
-    def mark_published(self, row_id: str, post_id: str) -> None:
-        self._update(row_id, {"status": "published", "post_id": post_id, "last_error": None})
+    def mark_published(self, row_id: str, post_id: str) -> bool:
+        with _LOCK:
+            rows = _read_all()
+            for r in rows:
+                if r["id"] == row_id and r.get("status") in {"queued", "publishing"}:
+                    r.update({"status": "published", "post_id": post_id, "last_error": None, "updated_at": _now()})
+                    _write_all(rows)
+                    return True
+        return False
 
-    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> None:
-        row = self.get(row_id) or {}
-        attempts = int(row.get("attempts", 0)) + 1
-        self._update(row_id, {
-            "status": "dead" if dead else "queued",
-            "attempts": attempts,
-            "last_error": err[:500],
-        })
+    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> bool:
+        with _LOCK:
+            rows = _read_all()
+            for r in rows:
+                if r["id"] == row_id and r.get("status") in {"queued", "publishing"}:
+                    r.update({"status": "dead" if dead else "queued", "attempts": int(r.get("attempts", 0)) + 1,
+                              "last_error": err[:500], "updated_at": _now()})
+                    _write_all(rows)
+                    return True
+        return False
+
+    def retry(self, row_id: str) -> bool:
+        with _LOCK:
+            rows = _read_all()
+            for r in rows:
+                if r["id"] == row_id and r.get("status") in {"queued", "failed", "dead"}:
+                    r.update({"status": "queued", "last_error": None, "updated_at": _now()})
+                    _write_all(rows)
+                    return True
+        return False
 
     def delete(self, row_id: str) -> bool:
         with _LOCK:
@@ -330,7 +351,7 @@ class RedisQueue:
         else:
             self._r.zrem(self._due_key(), row_id)
 
-    def mark_publishing(self, row_id: str) -> None:
+    def mark_publishing(self, row_id: str) -> bool:
         # Optimistic transaction makes the queued check and state transition atomic.
         pipe = self._r.pipeline()
         key = self._row_key(row_id)
@@ -338,7 +359,8 @@ class RedisQueue:
             row = self._read(row_id)
             if row and row.get("status") == "queued":
                 self._update(row_id, {"status": "publishing"})
-            return
+                return True
+            return False
         try:
             pipe.watch(key)
             row = self._read(row_id)
@@ -351,6 +373,7 @@ class RedisQueue:
             pipe.set(key, json.dumps(row, ensure_ascii=False))
             pipe.zrem(self._due_key(), row_id)
             pipe.execute()
+            return True
         except Exception:
             # A concurrent cancellation/claim loses this attempt; the worker's
             # next poll will observe the current state.
@@ -358,18 +381,29 @@ class RedisQueue:
                 pipe.reset()
             except Exception:
                 pass
+        return False
 
-    def mark_published(self, row_id: str, post_id: str) -> None:
+    def mark_published(self, row_id: str, post_id: str) -> bool:
+        row = self._read(row_id)
+        if not row or row.get("status") not in {"queued", "publishing"}:
+            return False
         self._update(row_id, {"status": "published", "post_id": post_id, "last_error": None})
+        return True
 
-    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> None:
+    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> bool:
         row = self._read(row_id) or {}
-        attempts = int(row.get("attempts", 0)) + 1
-        self._update(row_id, {
-            "status": "dead" if dead else "queued",
-            "attempts": attempts,
-            "last_error": err[:500],
-        })
+        if row.get("status") not in {"queued", "publishing"}:
+            return False
+        self._update(row_id, {"status": "dead" if dead else "queued", "attempts": int(row.get("attempts", 0)) + 1,
+                              "last_error": err[:500]})
+        return True
+
+    def retry(self, row_id: str) -> bool:
+        row = self._read(row_id)
+        if not row or row.get("status") in {"canceled", "publishing", "published"}:
+            return False
+        self._update(row_id, {"status": "queued", "last_error": None})
+        return True
 
     def delete(self, row_id: str) -> bool:
         pipe = self._r.pipeline()
@@ -550,7 +584,7 @@ class PostgresQueue:
         with self._conn() as conn, conn.cursor() as cur:
             cur.execute(sql, tuple(vals))
 
-    def mark_publishing(self, row_id: str) -> None:
+    def mark_publishing(self, row_id: str) -> bool:
         """Atomically flip queued → publishing using FOR UPDATE SKIP LOCKED.
 
         If another worker has the row locked or it's already publishing/done,
@@ -564,30 +598,29 @@ class PostgresQueue:
         with self._conn() as conn, conn.cursor() as cur:
             cur.execute(sql, (row_id,))
 
-    def mark_published(self, row_id: str, post_id: str) -> None:
-        self._update(row_id, {
-            "status": "published",
-            "post_id": post_id,
-            "last_error": None,
-        })
+    def mark_published(self, row_id: str, post_id: str) -> bool:
+        sql = f"UPDATE {self.TABLE} SET status = 'published', post_id = %s, last_error = NULL, updated_at = now() WHERE id = %s AND status = 'publishing'"
+        with self._conn() as conn, conn.cursor() as cur:
+            cur.execute(sql, (post_id, row_id))
+            return getattr(cur, "rowcount", 1) > 0
 
-    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> None:
-        sql = f"""
-            UPDATE {self.TABLE}
-            SET status = %s,
-                attempts = attempts + 1,
-                last_error = %s,
-                updated_at = now()
-            WHERE id = %s
-        """
+    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> bool:
+        sql = f"UPDATE {self.TABLE} SET status = %s, attempts = attempts + 1, last_error = %s, updated_at = now() WHERE id = %s AND status = 'publishing'"
         with self._conn() as conn, conn.cursor() as cur:
             cur.execute(sql, ("dead" if dead else "queued", err[:500], row_id))
+            return getattr(cur, "rowcount", 1) > 0
+
+    def retry(self, row_id: str) -> bool:
+        sql = f"UPDATE {self.TABLE} SET status = 'queued', last_error = NULL, updated_at = now() WHERE id = %s AND status IN ('queued', 'failed', 'dead')"
+        with self._conn() as conn, conn.cursor() as cur:
+            cur.execute(sql, (row_id,))
+            return getattr(cur, "rowcount", 1) > 0
 
     def delete(self, row_id: str) -> bool:
         sql = f"DELETE FROM {self.TABLE} WHERE id = %s"
         with self._conn() as conn, conn.cursor() as cur:
             cur.execute(sql, (row_id,))
-            return cur.rowcount > 0
+            return getattr(cur, "rowcount", 1) > 0
 
     def cancel_campaign(self, unit_id: str) -> list[dict]:
         """Flip every still-queued row of a campaign to 'canceled'.

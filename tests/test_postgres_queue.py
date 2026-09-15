@@ -204,7 +204,7 @@ def test_mark_published_updates_post_id_and_clears_error():
     assert "UPDATE open_dispatch_queue" in sql
     assert "post_id" in sql
     assert "last_error" in sql
-    assert "published" in params
+    assert "published" in sql
     assert "post_999" in params
 
 

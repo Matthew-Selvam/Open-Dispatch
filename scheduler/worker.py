@@ -83,21 +83,23 @@ def run_once() -> int:
     log.info("publishing %d due row(s)", len(due))
     for row in due:
         rid = row["id"]
-        q.mark_publishing(rid)
+        if not q.mark_publishing(rid):
+            log.info("skip %s: claim lost", rid)
+            continue
         ok, post_id, err = _publish(row)
         webhook = (row.get("unit") or {}).get("webhook_url")
         if ok:
             log.info("✓ %s → %s", rid, post_id)
-            q.mark_published(rid, post_id)
-            if webhook:
+            committed = q.mark_published(rid, post_id)
+            if committed and webhook:
                 _fire_webhook(webhook, {"event": "published", "id": rid, "post_id": post_id,
                                         "platform": row["platform"]})
         else:
             attempts = int(row.get("attempts", 0)) + 1
             dead = attempts >= MAX_ATTEMPTS
             log.error("✘ %s (attempt %d): %s", rid, attempts, err)
-            q.mark_failed(rid, err, dead=dead)
-            if not dead:
+            committed = q.mark_failed(rid, err, dead=dead)
+            if committed and not dead:
                 # Re-schedule with backoff
                 backoff = _backoff_seconds(attempts)
                 new_sf = datetime.now(tz=timezone.utc).timestamp() + backoff

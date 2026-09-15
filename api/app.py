@@ -335,7 +335,8 @@ async def retry_row(request: Request, row_id: str) -> Any:
         raise HTTPException(status_code=404, detail="not found")
     if row.get("status") == "canceled":
         raise HTTPException(status_code=409, detail="canceled rows cannot be retried")
-    q._update(row_id, {"status": "queued", "last_error": None})  # noqa: SLF001
+    if not q.retry(row_id):
+        raise HTTPException(status_code=409, detail="row cannot be retried in its current state")
     if _wants_html(request):
         # HTMX caller: re-render the queue fragment
         return await _render_queue_fragment(request, status=None)
