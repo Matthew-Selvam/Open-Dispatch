@@ -585,10 +585,9 @@ class PostgresQueue:
             cur.execute(sql, tuple(vals))
 
     def mark_publishing(self, row_id: str) -> bool:
-        """Atomically flip queued → publishing using FOR UPDATE SKIP LOCKED.
+        """Atomically flip queued to publishing; return whether claimed.
 
-        If another worker has the row locked or it's already publishing/done,
-        the UPDATE is a no-op.
+        A row already publishing or completed is a no-op.
         """
         sql = f"""
             UPDATE {self.TABLE}
@@ -597,6 +596,7 @@ class PostgresQueue:
         """
         with self._conn() as conn, conn.cursor() as cur:
             cur.execute(sql, (row_id,))
+            return getattr(cur, "rowcount", 1) > 0
 
     def mark_published(self, row_id: str, post_id: str) -> bool:
         sql = f"UPDATE {self.TABLE} SET status = 'published', post_id = %s, last_error = NULL, updated_at = now() WHERE id = %s AND status = 'publishing'"

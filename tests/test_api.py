@@ -40,6 +40,12 @@ def test_platforms_configured_covers_new_adapters(client, monkeypatch):
     assert "twitter" not in configured
 
 
+def test_ai_adapt_malformed_json_returns_400(client):
+    r = client.post("/ai/adapt", content=b"{", headers={"Content-Type": "application/json"})
+    assert r.status_code == 400
+    assert "invalid JSON body" in r.text
+
+
 def test_dispatch_validation_error(client):
     r = client.post("/dispatch", json={"targets": [], "formats": {}})
     assert r.status_code == 400

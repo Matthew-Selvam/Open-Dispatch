@@ -593,7 +593,10 @@ async def ai_adapt(request: Request) -> dict[str, Any]:
     Provider defaults: ollama if OLLAMA_HOST set, else openrouter if
     OPENROUTER_API_KEY set, else heuristic (no LLM).
     """
-    body = await request.json()
+    try:
+        body = await request.json()
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"invalid JSON body: {e}") from e
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="JSON body must be an object")
     text = (body.get("text") or "").strip()

@@ -106,7 +106,7 @@ def run_once() -> int:
                 new_sf_iso = datetime.fromtimestamp(new_sf, tz=timezone.utc).isoformat()
                 q._update(rid, {"scheduled_for": new_sf_iso})  # noqa: SLF001
                 log.info("  retry in %ds", backoff)
-            if webhook:
+            if committed and webhook:
                 _fire_webhook(webhook, {"event": "failed", "id": rid, "error": err,
                                         "platform": row["platform"], "dead": dead})
     return len(due)
