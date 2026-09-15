@@ -166,7 +166,14 @@ class JsonlQueue:
             _write_all(rows)
 
     def mark_publishing(self, row_id: str) -> None:
-        self._update(row_id, {"status": "publishing"})
+        with _LOCK:
+            rows = _read_all()
+            for r in rows:
+                if r["id"] == row_id and r.get("status") == "queued":
+                    r["status"] = "publishing"
+                    r["updated_at"] = _now()
+                    _write_all(rows)
+                    return
 
     def mark_published(self, row_id: str, post_id: str) -> None:
         self._update(row_id, {"status": "published", "post_id": post_id, "last_error": None})
@@ -324,11 +331,33 @@ class RedisQueue:
             self._r.zrem(self._due_key(), row_id)
 
     def mark_publishing(self, row_id: str) -> None:
-        # Claim atomically: only flip to "publishing" if currently "queued"
-        row = self._read(row_id)
-        if not row or row.get("status") != "queued":
+        # Optimistic transaction makes the queued check and state transition atomic.
+        pipe = self._r.pipeline()
+        key = self._row_key(row_id)
+        if not hasattr(pipe, "watch"):
+            row = self._read(row_id)
+            if row and row.get("status") == "queued":
+                self._update(row_id, {"status": "publishing"})
             return
-        self._update(row_id, {"status": "publishing"})
+        try:
+            pipe.watch(key)
+            row = self._read(row_id)
+            if not row or row.get("status") != "queued":
+                pipe.unwatch()
+                return
+            row["status"] = "publishing"
+            row["updated_at"] = _now()
+            pipe.multi()
+            pipe.set(key, json.dumps(row, ensure_ascii=False))
+            pipe.zrem(self._due_key(), row_id)
+            pipe.execute()
+        except Exception:
+            # A concurrent cancellation/claim loses this attempt; the worker's
+            # next poll will observe the current state.
+            try:
+                pipe.reset()
+            except Exception:
+                pass
 
     def mark_published(self, row_id: str, post_id: str) -> None:
         self._update(row_id, {"status": "published", "post_id": post_id, "last_error": None})
@@ -363,12 +392,33 @@ class RedisQueue:
             row = self._read(row_id)
             if not row or (row.get("unit") or {}).get("id") != unit_id:
                 continue
-            if row.get("status") != "queued":
+            pipe = self._r.pipeline()
+            if not hasattr(pipe, "watch"):
+                if row.get("status") != "queued":
+                    continue
+                row["status"] = "canceled"
+                self._write(row)
+                self._r.zrem(self._due_key(), row_id)
+                canceled.append(row)
                 continue
-            row["status"] = "canceled"
-            self._write(row)
-            self._r.zrem(self._due_key(), row_id)
-            canceled.append(row)
+            try:
+                pipe.watch(self._row_key(row_id))
+                current = self._read(row_id)
+                if not current or current.get("status") != "queued":
+                    pipe.unwatch()
+                    continue
+                current["status"] = "canceled"
+                current["updated_at"] = _now()
+                pipe.multi()
+                pipe.set(self._row_key(row_id), json.dumps(current, ensure_ascii=False))
+                pipe.zrem(self._due_key(), row_id)
+                pipe.execute()
+                canceled.append(current)
+            except Exception:
+                try:
+                    pipe.reset()
+                except Exception:
+                    pass
         return canceled
 
 

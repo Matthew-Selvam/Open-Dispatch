@@ -4,7 +4,8 @@
 Usage:
   dispatch send --platforms twitter,bluesky --text "hello"
   dispatch send --file unit.json
-  dispatch queue [--status queued|published|failed]
+  dispatch campaign <unit-id> [--cancel] [--local]
+  dispatch queue [--status queued|published|failed|dead|canceled]
   dispatch worker             # run scheduler in-process
   dispatch quick-test         # send a Telegram ping
 """

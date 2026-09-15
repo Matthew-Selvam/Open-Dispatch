@@ -133,7 +133,7 @@ def get_queue(status: str = "queued") -> str:
     """List queue rows filtered by status.
 
     Args:
-        status: One of: queued, publishing, published, failed, dead.
+        status: One of: queued, publishing, published, failed, dead, canceled.
                 Use 'all' to see everything.
 
     Returns:

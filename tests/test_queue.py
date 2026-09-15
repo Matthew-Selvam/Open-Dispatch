@@ -39,6 +39,18 @@ def test_due(tmp_path, monkeypatch):
     assert due[0]["scheduled_for"] == past
 
 
+def test_canceled_row_cannot_be_claimed_for_publishing(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPEN_DISPATCH_DATA", str(tmp_path))
+    import importlib
+    import api.queue as queue
+    importlib.reload(queue)
+    q = queue.JsonlQueue()
+    rid = q.enqueue({"id": "campaign-claim"}, "telegram:default", queue._now())
+    q.cancel_campaign("campaign-claim")
+    q.mark_publishing(rid)
+    assert q.get(rid)["status"] == "canceled"
+
+
 def test_due_compares_instants_not_strings(tmp_path, monkeypatch):
     """Scheduled rows must be due by their real instant, whatever the offset.
 

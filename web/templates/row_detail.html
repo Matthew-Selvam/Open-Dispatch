@@ -11,7 +11,7 @@
     </p>
   </div>
   <div class="actions">
-    {% if row.status == 'dead' or (row.last_error and row.status != 'published') %}
+    {% if row.status == 'dead' or (row.last_error and row.status not in ('published', 'canceled')) %}
     <form method="post" action="/queue/{{ row.id }}/retry" hx-post="/queue/{{ row.id }}/retry"
           hx-target="this" hx-swap="outerHTML">
       <button type="submit" class="btn btn-primary">Retry</button>

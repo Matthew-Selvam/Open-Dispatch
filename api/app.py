@@ -201,7 +201,7 @@ def _healthz_context() -> dict[str, Any]:
     # and marks exhausted ones "dead" — surface both so retries are visible.
     errored_rows = [
         r for r in rows
-        if r.get("last_error") and r.get("status") != "published"
+        if r.get("last_error") and r.get("status") not in {"published", "canceled"}
     ]
     errored_rows.sort(key=lambda r: r.get("updated_at", ""), reverse=True)
     recent_errors = [
