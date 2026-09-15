@@ -19,6 +19,22 @@ def client(tmp_path, monkeypatch):
     return TestClient(appmod.app)
 
 
+def test_profile_env_restores_environment_after_nested_contexts():
+    from profiles import Profile, profile_env
+    import os
+    original = os.environ.get("TELEGRAM_BOT_TOKEN")
+    os.environ.pop("TELEGRAM_BOT_TOKEN", None)
+    try:
+        with profile_env(Profile(platforms={"telegram": {"bot_token": "token-a"}})):
+            assert os.environ["TELEGRAM_BOT_TOKEN"] == "token-a"
+        assert "TELEGRAM_BOT_TOKEN" not in os.environ
+    finally:
+        if original is None:
+            os.environ.pop("TELEGRAM_BOT_TOKEN", None)
+        else:
+            os.environ["TELEGRAM_BOT_TOKEN"] = original
+
+
 def test_healthz(client):
     r = client.get("/healthz")
     assert r.status_code == 200

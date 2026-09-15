@@ -228,8 +228,8 @@ def profile_env(profile: Profile | None) -> Iterator[None]:
         yield
         return
 
-    saved = {k: os.environ.get(k) for k in overrides}
     with _env_lock:
+        saved = {k: os.environ.get(k) for k in overrides}
         os.environ.update(overrides)
         try:
             yield
