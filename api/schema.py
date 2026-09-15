@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import re
 import uuid
+import ipaddress
+from urllib.parse import urlparse
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,6 +34,24 @@ TARGET_RE = re.compile(r"^(?P<platform>[a-z]+)(?::(?P<account>[a-z0-9._-]+))?$")
 
 class ValidationError(Exception):
     """Raised when a ContentUnit fails validation."""
+
+
+def _validate_webhook_url(value: str | None) -> str | None:
+    if not value:
+        return None
+    parsed = urlparse(value)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        return "webhook_url must be an HTTPS URL without embedded credentials"
+    host = parsed.hostname.lower().rstrip(".")
+    if host in {"localhost", "localhost.localdomain"}:
+        return "webhook_url host is not allowed"
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        address = None
+    if address and (address.is_private or address.is_loopback or address.is_link_local or address.is_reserved or address.is_unspecified or address.is_multicast):
+        return "webhook_url host is not a public address"
+    return None
 
 
 def parse_target(target: str) -> tuple[str, str | None]:
@@ -76,6 +96,23 @@ class ContentUnit:
         return cls.from_dict(json.loads(Path(path).read_text()))
 
 
+def _validate_media_paths(value: Any, path: str = "formats") -> list[str]:
+    errors: list[str] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            errors.extend(_validate_media_paths(item, f"{path}.{key}"))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            errors.extend(_validate_media_paths(item, f"{path}[{index}]"))
+    elif isinstance(value, str):
+        key = path.rsplit(".", 1)[-1].split("[", 1)[0]
+        if key.endswith("_path") or key.endswith("_paths"):
+            candidate = Path(value)
+            if candidate.is_absolute() or ".." in candidate.parts:
+                errors.append(f"{path} must be a relative media path without '..'")
+    return errors
+
+
 def validate(unit: ContentUnit) -> list[str]:
     errs: list[str] = []
     if not unit.targets:
@@ -87,6 +124,10 @@ def validate(unit: ContentUnit) -> list[str]:
             errs.append(str(e))
     if not unit.formats:
         errs.append("formats must be non-empty")
+    errs.extend(_validate_media_paths(unit.formats))
+    webhook_error = _validate_webhook_url(unit.webhook_url)
+    if webhook_error:
+        errs.append(webhook_error)
     if unit.scheduled_for:
         try:
             datetime.fromisoformat(unit.scheduled_for.replace("Z", "+00:00"))

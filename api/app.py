@@ -458,7 +458,7 @@ async def compose_page(request: Request) -> HTMLResponse:
         {"id": p.id, "name": p.name, "emoji": p.emoji,
          "configured": p.configured_platforms()}
         for p in profiles
-    ])
+    ]).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     return templates.TemplateResponse(
         request, "compose.html",
         {
@@ -606,6 +606,8 @@ async def ai_adapt(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="text is required")
     if not isinstance(platforms, list) or not platforms:
         raise HTTPException(status_code=400, detail="platforms must be a non-empty list")
+    if len(text) > 10_000 or len(platforms) > 20:
+        raise HTTPException(status_code=413, detail="caption or platform list is too large")
     try:
         formats = await adapt_caption_async(text, platforms, provider=provider)
     except AdaptError as e:
@@ -784,6 +786,8 @@ async def media_transcode(request: Request) -> Any:
         raise HTTPException(status_code=400, detail="platform query param required")
     if not blob:
         raise HTTPException(status_code=400, detail="empty image body")
+    if len(blob) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="image exceeds 10 MiB limit")
 
     try:
         out = transcode_image_bytes(blob, platform)

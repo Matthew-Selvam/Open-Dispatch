@@ -81,6 +81,15 @@ def test_dispatch_non_object_json_returns_400(client):
     assert "must be an object" in r.text
 
 
+def test_dispatch_rejects_private_webhook_and_traversal(client):
+    body = {"targets": ["telegram"], "formats": {"telegram_message": {"text": "x"}},
+            "webhook_url": "http://127.0.0.1:8000/secret"}
+    assert client.post("/dispatch", json=body).status_code == 400
+    body["webhook_url"] = "https://hooks.example.test/callback"
+    body["formats"]["telegram_message"]["photo_path"] = "../../etc/passwd"
+    assert client.post("/dispatch", json=body).status_code == 400
+
+
 def test_dispatch_enqueues(client):
     body = {
         "targets": ["telegram:main"],
