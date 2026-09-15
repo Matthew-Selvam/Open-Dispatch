@@ -23,7 +23,7 @@ from profiles import ProfileStore, profile_env
 
 # Health heartbeat — written every poll loop so /healthz can show worker status.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-HEARTBEAT_PATH = _REPO_ROOT / "data" / ".worker_heartbeat"
+HEARTBEAT_PATH = Path(os.getenv("OPEN_DISPATCH_DATA", str(_REPO_ROOT / "data"))) / ".worker_heartbeat"
 
 logging.basicConfig(
     level=logging.INFO,

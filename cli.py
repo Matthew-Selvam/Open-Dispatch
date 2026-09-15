@@ -63,10 +63,7 @@ def cmd_send(args: argparse.Namespace) -> int:
                 elif plat == "discord":
                     formats["discord_message"] = {"content": args.text}
                 elif plat == "youtube":
-                    # YouTube needs a video_path — text-only CLI mode can't
-                    # supply one. Use `dispatch send --file unit.json` for
-                    # real YouTube uploads.
-                    formats["youtube_short"] = {"caption": args.text}
+                    raise SystemExit("YouTube requires --file with a video_path; text-only mode is unsupported")
         unit = ContentUnit(targets=targets, formats=formats,
                            scheduled_for=args.at,
                            webhook_url=args.webhook)

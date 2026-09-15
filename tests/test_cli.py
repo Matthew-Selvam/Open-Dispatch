@@ -3,6 +3,13 @@
 from __future__ import annotations
 
 import cli
+import pytest
+
+
+def test_send_rejects_text_only_youtube():
+    args = cli.build_parser().parse_args(["send", "--platforms", "youtube", "--text", "hello", "--local"])
+    with pytest.raises(SystemExit, match="YouTube requires"):
+        cli.cmd_send(args)
 
 
 def test_campaign_local_status_and_cancel(tmp_path, monkeypatch, capsys):
