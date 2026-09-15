@@ -6,7 +6,7 @@ Each queue row:
       "unit": {...ContentUnit dict...},
       "platform": "twitter:pol",
       "scheduled_for": "ISO",
-      "status": "queued|publishing|published|failed|dead",
+      "status": "queued|publishing|published|failed|dead|canceled",
       "attempts": 0,
       "post_id": null,
       "last_error": null,
@@ -54,6 +54,22 @@ def _iso_to_epoch(iso: str) -> float:
     return datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
 
 
+def _row_due(row: dict, due_epoch: float) -> bool:
+    """Is this row's scheduled_for at or before `due_epoch`?
+
+    Compares real instants, not ISO strings: '21:00+05:30' is an hour *before*
+    '16:00+00:00' but lexicographically after it. A row whose scheduled_for we
+    can't parse is treated as due — same as a plain 'now' — so the worker
+    surfaces it instead of the queue silently dead-ending it.
+    """
+    try:
+        return _iso_to_epoch(row["scheduled_for"]) <= due_epoch
+    except (ValueError, TypeError, KeyError):
+        log.warning("row %s has unparseable scheduled_for %r; treating as due",
+                    row.get("id", "?"), row.get("scheduled_for"))
+        return True
+
+
 # ─── Shared protocol (so worker code can target either backend) ───────────
 
 class QueueProtocol(Protocol):
@@ -61,10 +77,12 @@ class QueueProtocol(Protocol):
     def list_all(self, status: str | None = None) -> list[dict]: ...
     def get(self, row_id: str) -> dict | None: ...
     def list_due(self, now_iso: str) -> list[dict]: ...
-    def mark_publishing(self, row_id: str) -> None: ...
-    def mark_published(self, row_id: str, post_id: str) -> None: ...
-    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> None: ...
+    def mark_publishing(self, row_id: str) -> bool: ...
+    def mark_published(self, row_id: str, post_id: str) -> bool: ...
+    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> bool: ...
+    def retry(self, row_id: str) -> bool: ...
     def delete(self, row_id: str) -> bool: ...
+    def cancel_campaign(self, unit_id: str) -> list[dict]: ...
     def _update(self, row_id: str, patch: dict[str, Any]) -> None: ...
 
 
@@ -131,10 +149,11 @@ class JsonlQueue:
         return None
 
     def list_due(self, now_iso: str) -> list[dict]:
+        due_epoch = _iso_to_epoch(now_iso)
         with _LOCK:
             return [
                 r for r in _read_all()
-                if r["status"] == "queued" and r["scheduled_for"] <= now_iso
+                if r["status"] == "queued" and _row_due(r, due_epoch)
             ]
 
     def _update(self, row_id: str, patch: dict[str, Any]) -> None:
@@ -147,20 +166,47 @@ class JsonlQueue:
                     break
             _write_all(rows)
 
-    def mark_publishing(self, row_id: str) -> None:
-        self._update(row_id, {"status": "publishing"})
+    def mark_publishing(self, row_id: str) -> bool:
+        with _LOCK:
+            rows = _read_all()
+            for r in rows:
+                if r["id"] == row_id and r.get("status") == "queued":
+                    r["status"] = "publishing"
+                    r["updated_at"] = _now()
+                    _write_all(rows)
+                    return True
+        return False
 
-    def mark_published(self, row_id: str, post_id: str) -> None:
-        self._update(row_id, {"status": "published", "post_id": post_id, "last_error": None})
+    def mark_published(self, row_id: str, post_id: str) -> bool:
+        with _LOCK:
+            rows = _read_all()
+            for r in rows:
+                if r["id"] == row_id and r.get("status") in {"queued", "publishing"}:
+                    r.update({"status": "published", "post_id": post_id, "last_error": None, "updated_at": _now()})
+                    _write_all(rows)
+                    return True
+        return False
 
-    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> None:
-        row = self.get(row_id) or {}
-        attempts = int(row.get("attempts", 0)) + 1
-        self._update(row_id, {
-            "status": "dead" if dead else "queued",
-            "attempts": attempts,
-            "last_error": err[:500],
-        })
+    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> bool:
+        with _LOCK:
+            rows = _read_all()
+            for r in rows:
+                if r["id"] == row_id and r.get("status") in {"queued", "publishing"}:
+                    r.update({"status": "dead" if dead else "queued", "attempts": int(r.get("attempts", 0)) + 1,
+                              "last_error": err[:500], "updated_at": _now()})
+                    _write_all(rows)
+                    return True
+        return False
+
+    def retry(self, row_id: str) -> bool:
+        with _LOCK:
+            rows = _read_all()
+            for r in rows:
+                if r["id"] == row_id and r.get("status") in {"queued", "failed", "dead"}:
+                    r.update({"status": "queued", "last_error": None, "updated_at": _now()})
+                    _write_all(rows)
+                    return True
+        return False
 
     def delete(self, row_id: str) -> bool:
         with _LOCK:
@@ -170,6 +216,24 @@ class JsonlQueue:
                 return False
             _write_all(new)
         return True
+
+    def cancel_campaign(self, unit_id: str) -> list[dict]:
+        """Flip every still-queued row of a campaign to 'canceled'.
+
+        Returns the canceled rows. Rows already publishing/published/dead are
+        left alone — cancel is best-effort before the post goes live.
+        """
+        canceled: list[dict] = []
+        with _LOCK:
+            rows = _read_all()
+            for r in rows:
+                if (r.get("unit") or {}).get("id") == unit_id and r["status"] == "queued":
+                    r["status"] = "canceled"
+                    r["updated_at"] = _now()
+                    canceled.append(r)
+            if canceled:
+                _write_all(rows)
+        return canceled
 
 
 def _new_row(unit_dict: dict, platform_key: str, scheduled_for: str) -> dict:
@@ -287,24 +351,92 @@ class RedisQueue:
         else:
             self._r.zrem(self._due_key(), row_id)
 
-    def mark_publishing(self, row_id: str) -> None:
-        # Claim atomically: only flip to "publishing" if currently "queued"
-        row = self._read(row_id)
-        if not row or row.get("status") != "queued":
-            return
-        self._update(row_id, {"status": "publishing"})
+    def mark_publishing(self, row_id: str) -> bool:
+        # Optimistic transaction makes the queued check and state transition atomic.
+        pipe = self._r.pipeline()
+        key = self._row_key(row_id)
+        if not hasattr(pipe, "watch"):
+            row = self._read(row_id)
+            if row and row.get("status") == "queued":
+                self._update(row_id, {"status": "publishing"})
+                return True
+            return False
+        try:
+            pipe.watch(key)
+            row = self._read(row_id)
+            if not row or row.get("status") != "queued":
+                pipe.unwatch()
+                return
+            row["status"] = "publishing"
+            row["updated_at"] = _now()
+            pipe.multi()
+            pipe.set(key, json.dumps(row, ensure_ascii=False))
+            pipe.zrem(self._due_key(), row_id)
+            pipe.execute()
+            return True
+        except Exception:
+            # A concurrent cancellation/claim loses this attempt; the worker's
+            # next poll will observe the current state.
+            try:
+                pipe.reset()
+            except Exception:
+                pass
+        return False
 
-    def mark_published(self, row_id: str, post_id: str) -> None:
-        self._update(row_id, {"status": "published", "post_id": post_id, "last_error": None})
+    def _conditional_update(self, row_id: str, allowed: set[str], patch: dict[str, Any]) -> bool:
+        pipe = self._r.pipeline()
+        if not hasattr(pipe, "watch"):
+            row = self._read(row_id)
+            if not row or row.get("status") not in allowed:
+                return False
+            row.update(patch)
+            self._write(row)
+            status = row.get("status")
+            if status == "queued":
+                self._r.zadd(self._due_key(), {row_id: _iso_to_epoch(row["scheduled_for"])})
+            else:
+                self._r.zrem(self._due_key(), row_id)
+            return True
+        try:
+            key = self._row_key(row_id)
+            pipe.watch(key)
+            row = self._read(row_id)
+            if not row or row.get("status") not in allowed:
+                pipe.unwatch()
+                return False
+            row.update(patch)
+            row["updated_at"] = _now()
+            pipe.multi()
+            pipe.set(key, json.dumps(row, ensure_ascii=False))
+            if row.get("status") == "queued":
+                pipe.zadd(self._due_key(), {row_id: _iso_to_epoch(row["scheduled_for"])})
+            else:
+                pipe.zrem(self._due_key(), row_id)
+            pipe.execute()
+            return True
+        except Exception as exc:
+            try:
+                pipe.reset()
+            except Exception:
+                pass
+            if exc.__class__.__name__ in {"WatchError", "ConnectionError", "TimeoutError"}:
+                return False
+            raise
 
-    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> None:
+    def mark_published(self, row_id: str, post_id: str) -> bool:
+        return self._conditional_update(row_id, {"publishing"},
+                                        {"status": "published", "post_id": post_id, "last_error": None})
+
+    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> bool:
         row = self._read(row_id) or {}
-        attempts = int(row.get("attempts", 0)) + 1
-        self._update(row_id, {
-            "status": "dead" if dead else "queued",
-            "attempts": attempts,
-            "last_error": err[:500],
-        })
+        return self._conditional_update(row_id, {"publishing"},
+                                        {"status": "dead" if dead else "queued",
+                                         "attempts": int(row.get("attempts", 0)) + 1,
+                                         "last_error": err[:500]})
+
+    def retry(self, row_id: str) -> bool:
+        return self._conditional_update(row_id, {"queued", "failed", "dead"},
+                                        {"status": "queued", "last_error": None})
 
     def delete(self, row_id: str) -> bool:
         pipe = self._r.pipeline()
@@ -313,6 +445,48 @@ class RedisQueue:
         pipe.zrem(self._due_key(), row_id)
         results = pipe.execute()
         return bool(results[0])  # 1 if key existed and was deleted
+
+    def cancel_campaign(self, unit_id: str) -> list[dict]:
+        """Flip every still-queued row of a campaign to 'canceled'.
+
+        Status-guarded like mark_publishing: a row a worker already grabbed
+        (publishing/published/dead) is never canceled mid-publish. The same
+        read-then-write window the rest of this backend has is accepted here.
+        """
+        canceled: list[dict] = []
+        for rid in self._r.smembers(self._all_key()):
+            row_id = rid.decode() if isinstance(rid, bytes) else rid
+            row = self._read(row_id)
+            if not row or (row.get("unit") or {}).get("id") != unit_id:
+                continue
+            pipe = self._r.pipeline()
+            if not hasattr(pipe, "watch"):
+                if row.get("status") != "queued":
+                    continue
+                row["status"] = "canceled"
+                self._write(row)
+                self._r.zrem(self._due_key(), row_id)
+                canceled.append(row)
+                continue
+            try:
+                pipe.watch(self._row_key(row_id))
+                current = self._read(row_id)
+                if not current or current.get("status") != "queued":
+                    pipe.unwatch()
+                    continue
+                current["status"] = "canceled"
+                current["updated_at"] = _now()
+                pipe.multi()
+                pipe.set(self._row_key(row_id), json.dumps(current, ensure_ascii=False))
+                pipe.zrem(self._due_key(), row_id)
+                pipe.execute()
+                canceled.append(current)
+            except Exception:
+                try:
+                    pipe.reset()
+                except Exception:
+                    pass
+        return canceled
 
 
 # ─── Postgres backend ──────────────────────────────────────────────────────
@@ -443,11 +617,10 @@ class PostgresQueue:
         with self._conn() as conn, conn.cursor() as cur:
             cur.execute(sql, tuple(vals))
 
-    def mark_publishing(self, row_id: str) -> None:
-        """Atomically flip queued → publishing using FOR UPDATE SKIP LOCKED.
+    def mark_publishing(self, row_id: str) -> bool:
+        """Atomically flip queued to publishing; return whether claimed.
 
-        If another worker has the row locked or it's already publishing/done,
-        the UPDATE is a no-op.
+        A row already publishing or completed is a no-op.
         """
         sql = f"""
             UPDATE {self.TABLE}
@@ -456,31 +629,47 @@ class PostgresQueue:
         """
         with self._conn() as conn, conn.cursor() as cur:
             cur.execute(sql, (row_id,))
+            return getattr(cur, "rowcount", 1) > 0
 
-    def mark_published(self, row_id: str, post_id: str) -> None:
-        self._update(row_id, {
-            "status": "published",
-            "post_id": post_id,
-            "last_error": None,
-        })
+    def mark_published(self, row_id: str, post_id: str) -> bool:
+        sql = f"UPDATE {self.TABLE} SET status = 'published', post_id = %s, last_error = NULL, updated_at = now() WHERE id = %s AND status = 'publishing'"
+        with self._conn() as conn, conn.cursor() as cur:
+            cur.execute(sql, (post_id, row_id))
+            return getattr(cur, "rowcount", 1) > 0
 
-    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> None:
-        sql = f"""
-            UPDATE {self.TABLE}
-            SET status = %s,
-                attempts = attempts + 1,
-                last_error = %s,
-                updated_at = now()
-            WHERE id = %s
-        """
+    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> bool:
+        sql = f"UPDATE {self.TABLE} SET status = %s, attempts = attempts + 1, last_error = %s, updated_at = now() WHERE id = %s AND status = 'publishing'"
         with self._conn() as conn, conn.cursor() as cur:
             cur.execute(sql, ("dead" if dead else "queued", err[:500], row_id))
+            return getattr(cur, "rowcount", 1) > 0
+
+    def retry(self, row_id: str) -> bool:
+        sql = f"UPDATE {self.TABLE} SET status = 'queued', last_error = NULL, updated_at = now() WHERE id = %s AND status IN ('queued', 'failed', 'dead')"
+        with self._conn() as conn, conn.cursor() as cur:
+            cur.execute(sql, (row_id,))
+            return getattr(cur, "rowcount", 1) > 0
 
     def delete(self, row_id: str) -> bool:
         sql = f"DELETE FROM {self.TABLE} WHERE id = %s"
         with self._conn() as conn, conn.cursor() as cur:
             cur.execute(sql, (row_id,))
-            return cur.rowcount > 0
+            return getattr(cur, "rowcount", 1) > 0
+
+    def cancel_campaign(self, unit_id: str) -> list[dict]:
+        """Flip every still-queued row of a campaign to 'canceled'.
+
+        One atomic UPDATE ... RETURNING — the status guard lives in SQL, so
+        concurrent workers and this cancel can never interleave half-states.
+        """
+        sql = f"""
+            UPDATE {self.TABLE}
+            SET status = 'canceled', updated_at = now()
+            WHERE (unit->>'id') = %s AND status = 'queued'
+            RETURNING *
+        """
+        with self._conn() as conn, conn.cursor() as cur:
+            cur.execute(sql, (unit_id,))
+            return [self._row_to_dict(r) for r in cur.fetchall()]
 
 
 # ─── Factory ──────────────────────────────────────────────────────────────

@@ -19,6 +19,22 @@ def client(tmp_path, monkeypatch):
     return TestClient(appmod.app)
 
 
+def test_profile_env_restores_environment_after_nested_contexts():
+    from profiles import Profile, profile_env
+    import os
+    original = os.environ.get("TELEGRAM_BOT_TOKEN")
+    os.environ.pop("TELEGRAM_BOT_TOKEN", None)
+    try:
+        with profile_env(Profile(platforms={"telegram": {"bot_token": "token-a"}})):
+            assert os.environ["TELEGRAM_BOT_TOKEN"] == "token-a"
+        assert "TELEGRAM_BOT_TOKEN" not in os.environ
+    finally:
+        if original is None:
+            os.environ.pop("TELEGRAM_BOT_TOKEN", None)
+        else:
+            os.environ["TELEGRAM_BOT_TOKEN"] = original
+
+
 def test_healthz(client):
     r = client.get("/healthz")
     assert r.status_code == 200
@@ -40,6 +56,12 @@ def test_platforms_configured_covers_new_adapters(client, monkeypatch):
     assert "twitter" not in configured
 
 
+def test_ai_adapt_malformed_json_returns_400(client):
+    r = client.post("/ai/adapt", content=b"{", headers={"Content-Type": "application/json"})
+    assert r.status_code == 400
+    assert "invalid JSON body" in r.text
+
+
 def test_dispatch_validation_error(client):
     r = client.post("/dispatch", json={"targets": [], "formats": {}})
     assert r.status_code == 400
@@ -57,6 +79,15 @@ def test_dispatch_non_object_json_returns_400(client):
                     headers={"Content-Type": "application/json"})
     assert r.status_code == 400
     assert "must be an object" in r.text
+
+
+def test_dispatch_rejects_private_webhook_and_traversal(client):
+    body = {"targets": ["telegram"], "formats": {"telegram_message": {"text": "x"}},
+            "webhook_url": "http://127.0.0.1:8000/secret"}
+    assert client.post("/dispatch", json=body).status_code == 400
+    body["webhook_url"] = "https://hooks.example.test/callback"
+    body["formats"]["telegram_message"]["photo_path"] = "../../etc/passwd"
+    assert client.post("/dispatch", json=body).status_code == 400
 
 
 def test_dispatch_enqueues(client):
@@ -78,6 +109,48 @@ def test_queue_list(client):
     r = client.get("/queue")
     assert r.status_code == 200
     assert r.json()["count"] >= 1
+
+
+def test_campaign_status_and_cancel(client):
+    body = {
+        "id": "campaign-api-1",
+        "targets": ["telegram:main", "bluesky:main"],
+        "formats": {
+            "telegram_message": {"text": "hello"},
+            "bluesky_post": {"text": "hello"},
+        },
+    }
+    dispatch = client.post("/dispatch", json=body)
+    assert dispatch.status_code == 202
+    unit_id = dispatch.json()["unit_id"]
+
+    status = client.get(f"/campaign/{unit_id}")
+    assert status.status_code == 200
+    assert status.json()["unit_id"] == unit_id
+    assert status.json()["count"] == 2
+    assert {r["status"] for r in status.json()["rows"]} == {"queued"}
+
+    canceled = client.post(f"/campaign/{unit_id}/cancel")
+    assert canceled.status_code == 200
+    assert canceled.json()["unit_id"] == unit_id
+    assert canceled.json()["canceled"] == 2
+    assert {r["status"] for r in canceled.json()["rows"]} == {"canceled"}
+    assert {r["status"] for r in client.get(f"/campaign/{unit_id}").json()["rows"]} == {"canceled"}
+
+
+def test_campaign_not_found(client):
+    r = client.get("/campaign/no-such-campaign")
+    assert r.status_code == 404
+
+
+def test_retry_does_not_revive_canceled_row(client):
+    body = {"id": "campaign-retry-1", "targets": ["telegram"], "formats": {"telegram_message": {"text": "x"}}}
+    unit_id = client.post("/dispatch", json=body).json()["unit_id"]
+    row_id = client.get(f"/campaign/{unit_id}").json()["rows"][0]["id"]
+    client.post(f"/campaign/{unit_id}/cancel")
+    retry = client.post(f"/queue/{row_id}/retry")
+    assert retry.status_code == 409
+    assert client.get(f"/queue/{row_id}/json").json()["status"] == "canceled"
 
 
 def test_delete_row(client):

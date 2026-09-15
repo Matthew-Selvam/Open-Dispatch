@@ -25,7 +25,7 @@
 </div>
 
 <div class="filter-bar">
-  {% set statuses = ['all','queued','publishing','published','dead'] %}
+  {% set statuses = ['all','queued','publishing','published','failed','dead','canceled'] %}
   {% for s in statuses %}
     <a href="/{% if s != 'all' %}?status={{ s }}{% endif %}"
        class="chip {% if filter_status == s or (filter_status is none and s == 'all') %}chip-active{% endif %}">

@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Campaign status and cancellation** — `GET /campaign/{unit_id}` reports every platform row;
+  `POST /campaign/{unit_id}/cancel` cancels queued rows without touching in-flight or completed rows.
+  The CLI exposes `dispatch campaign <unit_id> [--cancel]`, and MCP exposes matching tools.
 - **Health dashboard** at `/healthz` — visual server + queue status (content-negotiated:
   HTML for browsers, JSON for monitors/curl). Pulsing liveness dot, queue stat grid,
   top-platforms bar chart, recent-failures table with one-click "Retry all".
@@ -21,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Per-row delete** and **bulk purge** (clear published / clear dead) in the dashboard.
 
 ### Fixed
+- Queue due-time comparison now parses timezone-aware timestamps as instants instead of comparing
+  ISO-8601 strings lexically; malformed schedule values are logged and treated as due.
+- Campaign cancellation is respected by retry endpoints and bulk retry, so canceled rows cannot be revived.
 - Version string now derives from installed package metadata instead of a stale hard-coded
   constant.
 - Corrected GitHub repository URLs (casing) across templates, docs, and the n8n node.

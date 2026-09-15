@@ -49,7 +49,8 @@ mcp = FastMCP(
         "Use dispatch() to post content to one or many platforms in one call. "
         "Platforms: twitter, bluesky, instagram, telegram, threads, linkedin, youtube, tiktok, facebook, discord. "
         "Target syntax: 'platform' or 'platform:account'. "
-        "Use get_queue() to monitor post status, retry_row() to retry failures."
+        "Use get_queue() to monitor post status, campaign_status() to inspect all platforms for one dispatch, "
+        "cancel_campaign() to stop queued campaign rows, and retry_row() to retry failures."
     ),
 )
 
@@ -132,7 +133,7 @@ def get_queue(status: str = "queued") -> str:
     """List queue rows filtered by status.
 
     Args:
-        status: One of: queued, publishing, published, failed, dead.
+        status: One of: queued, publishing, published, failed, dead, canceled.
                 Use 'all' to see everything.
 
     Returns:
@@ -150,6 +151,24 @@ def get_queue(status: str = "queued") -> str:
     if len(rows) > 20:
         lines.append(f"  … and {len(rows) - 20} more")
     return "\n".join(lines)
+
+
+@mcp.tool()
+def campaign_status(unit_id: str) -> str:
+    """Show all platform rows for a dispatched campaign."""
+    data = _get(f"/campaign/{unit_id}")
+    rows = data.get("rows", [])
+    lines = [f"Campaign {unit_id}: {len(rows)} row(s)"]
+    for row in rows:
+        lines.append(f"  [{row.get('status')}] {row.get('platform')}  id={row.get('id')}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def cancel_campaign(unit_id: str) -> str:
+    """Cancel all queued rows for a dispatched campaign."""
+    data = _post(f"/campaign/{unit_id}/cancel")
+    return f"Campaign {unit_id}: canceled {data.get('canceled', 0)} row(s)."
 
 
 @mcp.tool()

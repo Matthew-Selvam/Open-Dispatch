@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 
 from api.schema import ContentUnit
+from media.paths import resolve_media_path
 
 log = logging.getLogger("open-dispatch.bluesky")
 
@@ -68,9 +69,7 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
         if images:
             embed_images = []
             for img in images[:4]:
-                p = Path(img["path"])
-                if not p.exists():
-                    return False, "", f"image missing: {p}"
+                p = resolve_media_path(img["path"], strict_root=True)
                 uploaded = client.upload_blob(p.read_bytes())
                 embed_images.append({"image": uploaded.blob, "alt": img.get("alt", "")})
             ref = client.send_images(text=text[:300], images_alt=[i["alt"] for i in embed_images],

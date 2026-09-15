@@ -10,6 +10,9 @@ from __future__ import annotations
 import logging
 import os
 import random
+import socket
+from urllib.parse import urlparse
+import ipaddress
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,7 +26,7 @@ from profiles import ProfileStore, profile_env
 
 # Health heartbeat — written every poll loop so /healthz can show worker status.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-HEARTBEAT_PATH = _REPO_ROOT / "data" / ".worker_heartbeat"
+HEARTBEAT_PATH = Path(os.getenv("OPEN_DISPATCH_DATA", str(_REPO_ROOT / "data"))) / ".worker_heartbeat"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,9 +70,23 @@ def _publish(row: dict) -> tuple[bool, str, str]:
         return adapter.publish(unit, account)
 
 
-def _fire_webhook(url: str, payload: dict) -> None:
+def _safe_webhook_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        return False
     try:
-        httpx.post(url, json=payload, timeout=10)
+        addresses = {ipaddress.ip_address(info[4][0]) for info in socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)}
+    except (OSError, ValueError):
+        return False
+    return bool(addresses) and all(not (a.is_private or a.is_loopback or a.is_link_local or a.is_reserved or a.is_unspecified or a.is_multicast) for a in addresses)
+
+
+def _fire_webhook(url: str, payload: dict) -> None:
+    if not _safe_webhook_url(url):
+        log.warning("webhook rejected by egress policy")
+        return
+    try:
+        httpx.post(url, json=payload, timeout=10, follow_redirects=False)
     except Exception as e:  # noqa: BLE001
         log.warning("webhook failed: %s", e)
 
@@ -83,28 +100,30 @@ def run_once() -> int:
     log.info("publishing %d due row(s)", len(due))
     for row in due:
         rid = row["id"]
-        q.mark_publishing(rid)
+        if not q.mark_publishing(rid):
+            log.info("skip %s: claim lost", rid)
+            continue
         ok, post_id, err = _publish(row)
         webhook = (row.get("unit") or {}).get("webhook_url")
         if ok:
             log.info("✓ %s → %s", rid, post_id)
-            q.mark_published(rid, post_id)
-            if webhook:
+            committed = q.mark_published(rid, post_id)
+            if committed and webhook:
                 _fire_webhook(webhook, {"event": "published", "id": rid, "post_id": post_id,
                                         "platform": row["platform"]})
         else:
             attempts = int(row.get("attempts", 0)) + 1
             dead = attempts >= MAX_ATTEMPTS
             log.error("✘ %s (attempt %d): %s", rid, attempts, err)
-            q.mark_failed(rid, err, dead=dead)
-            if not dead:
+            committed = q.mark_failed(rid, err, dead=dead)
+            if committed and not dead:
                 # Re-schedule with backoff
                 backoff = _backoff_seconds(attempts)
                 new_sf = datetime.now(tz=timezone.utc).timestamp() + backoff
                 new_sf_iso = datetime.fromtimestamp(new_sf, tz=timezone.utc).isoformat()
                 q._update(rid, {"scheduled_for": new_sf_iso})  # noqa: SLF001
                 log.info("  retry in %ds", backoff)
-            if webhook:
+            if committed and webhook:
                 _fire_webhook(webhook, {"event": "failed", "id": rid, "error": err,
                                         "platform": row["platform"], "dead": dead})
     return len(due)

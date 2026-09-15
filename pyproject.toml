@@ -14,10 +14,6 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 
-[project.urls]
-Homepage = "https://open-dispatch-landing.vercel.app"
-Repository = "https://github.com/Matthew-Selvam/Open-Dispatch"
-"Bug Tracker" = "https://github.com/Matthew-Selvam/Open-Dispatch/issues"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
@@ -29,6 +25,11 @@ dependencies = [
     "python-multipart>=0.0.20",
     "Pillow>=10",
 ]
+
+[project.urls]
+Homepage = "https://open-dispatch-landing.vercel.app"
+Repository = "https://github.com/Matthew-Selvam/Open-Dispatch"
+"Bug Tracker" = "https://github.com/Matthew-Selvam/Open-Dispatch/issues"
 
 [project.optional-dependencies]
 test = ["pytest>=8", "pytest-asyncio>=0.23"]
@@ -46,10 +47,14 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = ["cli"]
+py-modules = ["cli", "profiles", "mcp_server"]
+include-package-data = true
 
 [tool.setuptools.packages.find]
-include = ["api*", "adapters*", "scheduler*", "ai*", "media*"]
+include = ["api*", "adapters*", "scheduler*", "ai*", "media*", "web*"]
+
+[tool.setuptools.package-data]
+web = ["templates/*.html", "static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

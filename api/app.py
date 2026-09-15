@@ -6,6 +6,7 @@ import html
 import json
 import logging
 import os
+import secrets
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -62,8 +63,34 @@ app = FastAPI(
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+API_TOKEN = os.getenv("OPEN_DISPATCH_API_TOKEN", "").strip()
 
-# ─── Helpers ──────────────────────────────────────────────────────────────
+
+def _authorized(request: Request) -> bool:
+    if not API_TOKEN:
+        return True
+    auth = request.headers.get("authorization", "")
+    supplied = auth.removeprefix("Bearer ").strip()
+    return bool(supplied) and secrets.compare_digest(supplied, API_TOKEN)
+
+
+@app.middleware("http")
+async def security_middleware(request: Request, call_next):
+    if request.url.path != "/healthz" and not _authorized(request):
+        return JSONResponse({"detail": "authentication required"}, status_code=401,
+                            headers={"WWW-Authenticate": "Bearer"})
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.headers.get("origin"):
+        origin = request.headers["origin"].rstrip("/")
+        if origin != str(request.base_url).rstrip("/"):
+            return JSONResponse({"detail": "origin not allowed"}, status_code=403)
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "same-origin"
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and not request.headers.get("authorization"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
 
 def _platforms_configured() -> set[str]:
     """Which platforms have at least the canonical credential env var set?"""
@@ -201,7 +228,7 @@ def _healthz_context() -> dict[str, Any]:
     # and marks exhausted ones "dead" — surface both so retries are visible.
     errored_rows = [
         r for r in rows
-        if r.get("last_error") and r.get("status") != "published"
+        if r.get("last_error") and r.get("status") not in {"published", "canceled"}
     ]
     errored_rows.sort(key=lambda r: r.get("updated_at", ""), reverse=True)
     recent_errors = [
@@ -264,6 +291,8 @@ async def dispatch(request: Request) -> JSONResponse:
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="JSON body must be an object")
     unit = ContentUnit.from_dict(body)
+    if len(json.dumps(unit.to_dict(), ensure_ascii=False)) > 100_000:
+        raise HTTPException(status_code=413, detail="dispatch payload is too large")
     errs = validate(unit)
     if errs:
         raise HTTPException(status_code=400, detail={"errors": errs})
@@ -284,9 +313,45 @@ async def dispatch(request: Request) -> JSONResponse:
 
 
 @app.get("/queue")
-def list_queue(status: str | None = None) -> dict[str, Any]:
+def list_queue(status: str | None = None, limit: int = 100, offset: int = 0) -> dict[str, Any]:
+    if limit < 1 or limit > 500 or offset < 0:
+        raise HTTPException(status_code=400, detail="limit must be 1..500 and offset must be non-negative")
     rows = get_queue().list_all(status=status)
-    return {"count": len(rows), "rows": rows}
+    return {"count": len(rows), "offset": offset, "limit": limit, "has_more": offset + limit < len(rows),
+            "rows": rows[offset:offset + limit]}
+
+
+@app.get("/campaign/{unit_id}")
+def campaign_status(unit_id: str, limit: int = 100, offset: int = 0) -> dict[str, Any]:
+    """Return a bounded page of rows belonging to one dispatched content unit."""
+    if limit < 1 or limit > 500 or offset < 0:
+        raise HTTPException(status_code=400, detail="limit must be 1..500 and offset must be non-negative")
+    rows = [
+        row for row in get_queue().list_all()
+        if (row.get("unit") or {}).get("id") == unit_id
+    ]
+    if not rows:
+        raise HTTPException(status_code=404, detail="campaign not found")
+    return {"unit_id": unit_id, "count": len(rows), "offset": offset, "limit": limit,
+            "has_more": offset + limit < len(rows), "rows": rows[offset:offset + limit]}
+
+
+@app.post("/campaign/{unit_id}/cancel")
+def cancel_campaign(unit_id: str) -> dict[str, Any]:
+    """Cancel queued rows for a campaign; rows already in flight are unchanged."""
+    q = get_queue()
+    existing = [
+        row for row in q.list_all()
+        if (row.get("unit") or {}).get("id") == unit_id
+    ]
+    if not existing:
+        raise HTTPException(status_code=404, detail="campaign not found")
+    canceled = q.cancel_campaign(unit_id)
+    return {
+        "unit_id": unit_id,
+        "canceled": len(canceled),
+        "rows": canceled,
+    }
 
 
 @app.get("/queue/{row_id}/json")
@@ -303,7 +368,10 @@ async def retry_row(request: Request, row_id: str) -> Any:
     row = q.get(row_id)
     if not row:
         raise HTTPException(status_code=404, detail="not found")
-    q._update(row_id, {"status": "queued", "last_error": None})  # noqa: SLF001
+    if row.get("status") == "canceled":
+        raise HTTPException(status_code=409, detail="canceled rows cannot be retried")
+    if not q.retry(row_id):
+        raise HTTPException(status_code=409, detail="row cannot be retried in its current state")
     if _wants_html(request):
         # HTMX caller: re-render the queue fragment
         return await _render_queue_fragment(request, status=None)
@@ -316,7 +384,7 @@ async def retry_all(request: Request) -> Any:
     q = get_queue()
     requeued = 0
     for row in q.list_all():
-        if row.get("last_error") and row.get("status") != "published":
+        if row.get("last_error") and row.get("status") not in {"published", "canceled"}:
             q._update(row["id"], {"status": "queued", "last_error": None})  # noqa: SLF001
             requeued += 1
     if _wants_html(request):
@@ -425,7 +493,7 @@ async def compose_page(request: Request) -> HTMLResponse:
         {"id": p.id, "name": p.name, "emoji": p.emoji,
          "configured": p.configured_platforms()}
         for p in profiles
-    ])
+    ]).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     return templates.TemplateResponse(
         request, "compose.html",
         {
@@ -560,7 +628,10 @@ async def ai_adapt(request: Request) -> dict[str, Any]:
     Provider defaults: ollama if OLLAMA_HOST set, else openrouter if
     OPENROUTER_API_KEY set, else heuristic (no LLM).
     """
-    body = await request.json()
+    try:
+        body = await request.json()
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"invalid JSON body: {e}") from e
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="JSON body must be an object")
     text = (body.get("text") or "").strip()
@@ -570,6 +641,8 @@ async def ai_adapt(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="text is required")
     if not isinstance(platforms, list) or not platforms:
         raise HTTPException(status_code=400, detail="platforms must be a non-empty list")
+    if len(text) > 10_000 or len(platforms) > 20:
+        raise HTTPException(status_code=413, detail="caption or platform list is too large")
     try:
         formats = await adapt_caption_async(text, platforms, provider=provider)
     except AdaptError as e:
@@ -682,14 +755,18 @@ def api_profiles_list() -> list[dict]:
 def _profile_from_form(form: Any, profile_id: str | None = None) -> Profile:
     """Build a Profile from a submitted HTML form."""
     pid = profile_id or str(form.get("id", "")).strip() or None
-    platforms: dict[str, dict[str, str]] = {}
+    existing = ProfileStore().get(profile_id) if profile_id else None
+    platforms: dict[str, dict[str, str]] = {
+        p: dict(creds) for p, creds in (existing.platforms.items() if existing else [])
+    }
     for platform, fields in PLATFORM_CRED_MAP.items():
-        creds: dict[str, str] = {}
+        creds = platforms.setdefault(platform, {})
         for field_name in fields:
-            value = str(form.get(f"{platform}__{field_name}", "")).strip()
-            creds[field_name] = value
-        if any(v for v in creds.values()):
-            platforms[platform] = creds
+            submitted = str(form.get(f"{platform}__{field_name}", "")).strip()
+            if submitted:
+                creds[field_name] = submitted
+        if not any(creds.values()):
+            platforms.pop(platform, None)
     return Profile(
         id=pid if pid else Profile().id,
         name=str(form.get("name", "")).strip() or "Unnamed",
@@ -748,6 +825,8 @@ async def media_transcode(request: Request) -> Any:
         raise HTTPException(status_code=400, detail="platform query param required")
     if not blob:
         raise HTTPException(status_code=400, detail="empty image body")
+    if len(blob) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="image exceeds 10 MiB limit")
 
     try:
         out = transcode_image_bytes(blob, platform)
@@ -800,6 +879,10 @@ async def dispatch_bulk(request: Request) -> JSONResponse:
     import io
 
     content_type = request.headers.get("content-type", "")
+    max_bytes = 1_000_000
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > max_bytes:
+        raise HTTPException(status_code=413, detail="CSV exceeds 1 MiB limit")
     if "multipart" in content_type:
         form = await request.form()
         upload = form.get("file")
@@ -809,6 +892,8 @@ async def dispatch_bulk(request: Request) -> JSONResponse:
     else:
         raw = (await request.body()).decode("utf-8")
 
+    if len(raw.encode("utf-8")) > max_bytes:
+        raise HTTPException(status_code=413, detail="CSV exceeds 1 MiB limit")
     if not raw.strip():
         raise HTTPException(status_code=400, detail="CSV body is empty")
 
@@ -818,6 +903,8 @@ async def dispatch_bulk(request: Request) -> JSONResponse:
     errors: list[dict] = []
 
     for i, row in enumerate(reader, start=1):
+        if i > 1000:
+            raise HTTPException(status_code=413, detail="CSV exceeds 1000-row limit")
         # skip blank lines and header rows starting with '#' or 'targets'
         if not row or not row[0].strip() or row[0].strip().lower() in {"targets", "#"}:
             continue
