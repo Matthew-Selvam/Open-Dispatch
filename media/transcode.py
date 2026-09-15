@@ -26,6 +26,7 @@ import io
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from media.paths import resolve_media_destination, resolve_media_path
 
 log = logging.getLogger("open-dispatch.media.transcode")
 
@@ -144,9 +145,10 @@ def transcode_image(src_path: str | Path, platform: str,
     If `dest_path` is None, writes to `<src>.<platform>.<ext>` next to the source.
     Returns the destination Path.
     """
-    src = Path(src_path)
-    if not src.exists():
-        raise TranscodeError(f"source image not found: {src}")
+    try:
+        src = resolve_media_path(src_path)
+    except Exception as e:
+        raise TranscodeError(f"source image not found: {src_path}") from e
     spec = PLATFORM_IMAGE_SPECS.get(platform)
     if not spec:
         raise TranscodeError(f"no image spec for platform: {platform!r}")
@@ -155,9 +157,9 @@ def transcode_image(src_path: str | Path, platform: str,
 
     if dest_path is None:
         ext = "jpg" if spec.format == "JPEG" else spec.format.lower()
-        dest = src.with_name(f"{src.stem}.{platform}.{ext}")
+        dest = resolve_media_destination(f"{src.name}.{platform}.{ext}")
     else:
-        dest = Path(dest_path)
+        dest = resolve_media_destination(dest_path)
     dest.write_bytes(out_bytes)
     return dest
 

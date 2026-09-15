@@ -10,6 +10,9 @@ from __future__ import annotations
 import logging
 import os
 import random
+import socket
+from urllib.parse import urlparse
+import ipaddress
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -67,9 +70,23 @@ def _publish(row: dict) -> tuple[bool, str, str]:
         return adapter.publish(unit, account)
 
 
-def _fire_webhook(url: str, payload: dict) -> None:
+def _safe_webhook_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        return False
     try:
-        httpx.post(url, json=payload, timeout=10)
+        addresses = {ipaddress.ip_address(info[4][0]) for info in socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)}
+    except (OSError, ValueError):
+        return False
+    return bool(addresses) and all(not (a.is_private or a.is_loopback or a.is_link_local or a.is_reserved or a.is_unspecified or a.is_multicast) for a in addresses)
+
+
+def _fire_webhook(url: str, payload: dict) -> None:
+    if not _safe_webhook_url(url):
+        log.warning("webhook rejected by egress policy")
+        return
+    try:
+        httpx.post(url, json=payload, timeout=10, follow_redirects=False)
     except Exception as e:  # noqa: BLE001
         log.warning("webhook failed: %s", e)
 

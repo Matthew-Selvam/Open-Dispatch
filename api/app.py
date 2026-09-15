@@ -879,6 +879,10 @@ async def dispatch_bulk(request: Request) -> JSONResponse:
     import io
 
     content_type = request.headers.get("content-type", "")
+    max_bytes = 1_000_000
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > max_bytes:
+        raise HTTPException(status_code=413, detail="CSV exceeds 1 MiB limit")
     if "multipart" in content_type:
         form = await request.form()
         upload = form.get("file")
@@ -888,6 +892,8 @@ async def dispatch_bulk(request: Request) -> JSONResponse:
     else:
         raw = (await request.body()).decode("utf-8")
 
+    if len(raw.encode("utf-8")) > max_bytes:
+        raise HTTPException(status_code=413, detail="CSV exceeds 1 MiB limit")
     if not raw.strip():
         raise HTTPException(status_code=400, detail="CSV body is empty")
 
@@ -897,6 +903,8 @@ async def dispatch_bulk(request: Request) -> JSONResponse:
     errors: list[dict] = []
 
     for i, row in enumerate(reader, start=1):
+        if i > 1000:
+            raise HTTPException(status_code=413, detail="CSV exceeds 1000-row limit")
         # skip blank lines and header rows starting with '#' or 'targets'
         if not row or not row[0].strip() or row[0].strip().lower() in {"targets", "#"}:
             continue
