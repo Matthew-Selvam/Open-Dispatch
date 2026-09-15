@@ -80,6 +80,48 @@ def test_queue_list(client):
     assert r.json()["count"] >= 1
 
 
+def test_campaign_status_and_cancel(client):
+    body = {
+        "id": "campaign-api-1",
+        "targets": ["telegram:main", "bluesky:main"],
+        "formats": {
+            "telegram_message": {"text": "hello"},
+            "bluesky_post": {"text": "hello"},
+        },
+    }
+    dispatch = client.post("/dispatch", json=body)
+    assert dispatch.status_code == 202
+    unit_id = dispatch.json()["unit_id"]
+
+    status = client.get(f"/campaign/{unit_id}")
+    assert status.status_code == 200
+    assert status.json()["unit_id"] == unit_id
+    assert status.json()["count"] == 2
+    assert {r["status"] for r in status.json()["rows"]} == {"queued"}
+
+    canceled = client.post(f"/campaign/{unit_id}/cancel")
+    assert canceled.status_code == 200
+    assert canceled.json()["unit_id"] == unit_id
+    assert canceled.json()["canceled"] == 2
+    assert {r["status"] for r in canceled.json()["rows"]} == {"canceled"}
+    assert {r["status"] for r in client.get(f"/campaign/{unit_id}").json()["rows"]} == {"canceled"}
+
+
+def test_campaign_not_found(client):
+    r = client.get("/campaign/no-such-campaign")
+    assert r.status_code == 404
+
+
+def test_retry_does_not_revive_canceled_row(client):
+    body = {"id": "campaign-retry-1", "targets": ["telegram"], "formats": {"telegram_message": {"text": "x"}}}
+    unit_id = client.post("/dispatch", json=body).json()["unit_id"]
+    row_id = client.get(f"/campaign/{unit_id}").json()["rows"][0]["id"]
+    client.post(f"/campaign/{unit_id}/cancel")
+    retry = client.post(f"/queue/{row_id}/retry")
+    assert retry.status_code == 409
+    assert client.get(f"/queue/{row_id}/json").json()["status"] == "canceled"
+
+
 def test_delete_row(client):
     body = {"targets": ["telegram"], "formats": {"telegram_message": {"text": "bye"}}}
     r = client.post("/dispatch", json=body)

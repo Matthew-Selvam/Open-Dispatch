@@ -259,7 +259,9 @@ Dark terminal aesthetic. HTMX-driven (no JS build step). 51 KB vendored `htmx.mi
 |---|---|---|
 | GET | `/healthz` | Liveness probe — JSON for monitors, HTML dashboard for browsers |
 | POST | `/dispatch` | Enqueue a ContentUnit for one or many platforms |
-| GET | `/queue?status=…` | List rows (`queued / publishing / published / dead`) |
+| GET | `/queue?status=…` | List rows (`queued / publishing / published / failed / dead / canceled`) |
+| GET | `/campaign/{unit_id}` | Show every platform row for one dispatch |
+| POST | `/campaign/{unit_id}/cancel` | Cancel that campaign's queued rows |
 | GET | `/queue/{id}` | One row — JSON or HTML (content-negotiated) |
 | POST | `/queue/{id}/retry` | Reset an errored / dead row to `queued` |
 | DELETE | `/queue/{id}` | Delete a single queue row permanently |
@@ -315,6 +317,11 @@ dispatch send --platforms telegram --text "scheduled post" \
 # View queue
 dispatch queue --status queued
 dispatch queue --status failed
+
+# View or cancel one dispatch campaign
+# (use --local to bypass HTTP and access the configured local queue)
+dispatch campaign <unit-id> [--local]
+dispatch campaign <unit-id> --cancel [--local]
 
 # Run the worker in-process
 dispatch worker

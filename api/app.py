@@ -289,6 +289,36 @@ def list_queue(status: str | None = None) -> dict[str, Any]:
     return {"count": len(rows), "rows": rows}
 
 
+@app.get("/campaign/{unit_id}")
+def campaign_status(unit_id: str) -> dict[str, Any]:
+    """Return every queue row belonging to one dispatched content unit."""
+    rows = [
+        row for row in get_queue().list_all()
+        if (row.get("unit") or {}).get("id") == unit_id
+    ]
+    if not rows:
+        raise HTTPException(status_code=404, detail="campaign not found")
+    return {"unit_id": unit_id, "count": len(rows), "rows": rows}
+
+
+@app.post("/campaign/{unit_id}/cancel")
+def cancel_campaign(unit_id: str) -> dict[str, Any]:
+    """Cancel queued rows for a campaign; rows already in flight are unchanged."""
+    q = get_queue()
+    existing = [
+        row for row in q.list_all()
+        if (row.get("unit") or {}).get("id") == unit_id
+    ]
+    if not existing:
+        raise HTTPException(status_code=404, detail="campaign not found")
+    canceled = q.cancel_campaign(unit_id)
+    return {
+        "unit_id": unit_id,
+        "canceled": len(canceled),
+        "rows": canceled,
+    }
+
+
 @app.get("/queue/{row_id}/json")
 def get_row_json(row_id: str) -> dict[str, Any]:
     row = get_queue().get(row_id)
@@ -303,6 +333,8 @@ async def retry_row(request: Request, row_id: str) -> Any:
     row = q.get(row_id)
     if not row:
         raise HTTPException(status_code=404, detail="not found")
+    if row.get("status") == "canceled":
+        raise HTTPException(status_code=409, detail="canceled rows cannot be retried")
     q._update(row_id, {"status": "queued", "last_error": None})  # noqa: SLF001
     if _wants_html(request):
         # HTMX caller: re-render the queue fragment
@@ -316,7 +348,7 @@ async def retry_all(request: Request) -> Any:
     q = get_queue()
     requeued = 0
     for row in q.list_all():
-        if row.get("last_error") and row.get("status") != "published":
+        if row.get("last_error") and row.get("status") not in {"published", "canceled"}:
             q._update(row["id"], {"status": "queued", "last_error": None})  # noqa: SLF001
             requeued += 1
     if _wants_html(request):

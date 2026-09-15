@@ -102,6 +102,30 @@ def cmd_queue(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_campaign(args: argparse.Namespace) -> int:
+    if args.local:
+        q = get_queue()
+        rows = [r for r in q.list_all() if (r.get("unit") or {}).get("id") == args.unit_id]
+        if not rows:
+            raise SystemExit(f"campaign not found: {args.unit_id}")
+        if args.cancel:
+            rows = q.cancel_campaign(args.unit_id)
+            print(json.dumps({"unit_id": args.unit_id, "canceled": len(rows), "rows": rows}, indent=2))
+        else:
+            print(json.dumps({"unit_id": args.unit_id, "count": len(rows), "rows": rows}, indent=2))
+        return 0
+
+    if args.cancel:
+        resp = _post(f"{args.url}/campaign/{args.unit_id}/cancel", {})
+    else:
+        r = httpx.get(f"{args.url}/campaign/{args.unit_id}", timeout=30)
+        if r.status_code >= 400:
+            raise SystemExit(f"HTTP {r.status_code}: {r.text}")
+        resp = r.json()
+    print(json.dumps(resp, indent=2))
+    return 0
+
+
 def cmd_worker(args: argparse.Namespace) -> int:
     from scheduler.worker import main as worker_main
     return worker_main()
@@ -137,8 +161,14 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_send)
 
     q = sub.add_parser("queue", help="List rows in the queue")
-    q.add_argument("--status", help="filter (queued|publishing|published|failed|dead)")
+    q.add_argument("--status", help="filter (queued|publishing|published|failed|dead|canceled)")
     q.set_defaults(func=cmd_queue)
+
+    c = sub.add_parser("campaign", help="Inspect or cancel a dispatched campaign")
+    c.add_argument("unit_id", help="content unit ID returned by dispatch")
+    c.add_argument("--cancel", action="store_true", help="cancel queued rows")
+    c.add_argument("--local", action="store_true", help="bypass HTTP; use the local queue")
+    c.set_defaults(func=cmd_campaign)
 
     w = sub.add_parser("worker", help="Run the scheduler worker in-process")
     w.set_defaults(func=cmd_worker)
