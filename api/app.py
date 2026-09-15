@@ -6,6 +6,7 @@ import html
 import json
 import logging
 import os
+import secrets
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -61,6 +62,32 @@ app = FastAPI(
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+API_TOKEN = os.getenv("OPEN_DISPATCH_API_TOKEN", "").strip()
+
+
+def _authorized(request: Request) -> bool:
+    if not API_TOKEN:
+        return True
+    auth = request.headers.get("authorization", "")
+    supplied = auth.removeprefix("Bearer ").strip()
+    return bool(supplied) and secrets.compare_digest(supplied, API_TOKEN)
+
+
+@app.middleware("http")
+async def security_middleware(request: Request, call_next):
+    if request.url.path != "/healthz" and not _authorized(request):
+        return JSONResponse({"detail": "authentication required"}, status_code=401,
+                            headers={"WWW-Authenticate": "Bearer"})
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.headers.get("origin"):
+        origin = request.headers["origin"].rstrip("/")
+        if origin != str(request.base_url).rstrip("/"):
+            return JSONResponse({"detail": "origin not allowed"}, status_code=403)
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "same-origin"
+    return response
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────
@@ -720,14 +747,18 @@ def api_profiles_list() -> list[dict]:
 def _profile_from_form(form: Any, profile_id: str | None = None) -> Profile:
     """Build a Profile from a submitted HTML form."""
     pid = profile_id or str(form.get("id", "")).strip() or None
-    platforms: dict[str, dict[str, str]] = {}
+    existing = ProfileStore().get(profile_id) if profile_id else None
+    platforms: dict[str, dict[str, str]] = {
+        p: dict(creds) for p, creds in (existing.platforms.items() if existing else [])
+    }
     for platform, fields in PLATFORM_CRED_MAP.items():
-        creds: dict[str, str] = {}
+        creds = platforms.setdefault(platform, {})
         for field_name in fields:
-            value = str(form.get(f"{platform}__{field_name}", "")).strip()
-            creds[field_name] = value
-        if any(v for v in creds.values()):
-            platforms[platform] = creds
+            submitted = str(form.get(f"{platform}__{field_name}", "")).strip()
+            if submitted:
+                creds[field_name] = submitted
+        if not any(creds.values()):
+            platforms.pop(platform, None)
     return Profile(
         id=pid if pid else Profile().id,
         name=str(form.get("name", "")).strip() or "Unnamed",

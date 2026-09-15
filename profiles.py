@@ -175,9 +175,17 @@ class ProfileStore:
 
     def _save(self, profiles: list[Profile]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(self._path.parent, 0o700)
+        except OSError:
+            pass
         self._path.write_text(
             json.dumps({"profiles": [p.to_dict() for p in profiles]}, indent=2, ensure_ascii=False)
         )
+        try:
+            os.chmod(self._path, 0o600)
+        except OSError:
+            pass
 
     def list(self) -> list[Profile]:
         return self._load()
