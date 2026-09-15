@@ -117,6 +117,8 @@ def validate(unit: ContentUnit) -> list[str]:
     errs: list[str] = []
     if not unit.targets:
         errs.append("targets must be non-empty")
+    if len(unit.targets) > 20:
+        errs.append("targets must contain at most 20 platforms")
     for t in unit.targets:
         try:
             parse_target(t)

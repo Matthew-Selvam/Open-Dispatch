@@ -291,6 +291,8 @@ async def dispatch(request: Request) -> JSONResponse:
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="JSON body must be an object")
     unit = ContentUnit.from_dict(body)
+    if len(json.dumps(unit.to_dict(), ensure_ascii=False)) > 100_000:
+        raise HTTPException(status_code=413, detail="dispatch payload is too large")
     errs = validate(unit)
     if errs:
         raise HTTPException(status_code=400, detail={"errors": errs})
@@ -311,21 +313,27 @@ async def dispatch(request: Request) -> JSONResponse:
 
 
 @app.get("/queue")
-def list_queue(status: str | None = None) -> dict[str, Any]:
+def list_queue(status: str | None = None, limit: int = 100, offset: int = 0) -> dict[str, Any]:
+    if limit < 1 or limit > 500 or offset < 0:
+        raise HTTPException(status_code=400, detail="limit must be 1..500 and offset must be non-negative")
     rows = get_queue().list_all(status=status)
-    return {"count": len(rows), "rows": rows}
+    return {"count": len(rows), "offset": offset, "limit": limit, "has_more": offset + limit < len(rows),
+            "rows": rows[offset:offset + limit]}
 
 
 @app.get("/campaign/{unit_id}")
-def campaign_status(unit_id: str) -> dict[str, Any]:
-    """Return every queue row belonging to one dispatched content unit."""
+def campaign_status(unit_id: str, limit: int = 100, offset: int = 0) -> dict[str, Any]:
+    """Return a bounded page of rows belonging to one dispatched content unit."""
+    if limit < 1 or limit > 500 or offset < 0:
+        raise HTTPException(status_code=400, detail="limit must be 1..500 and offset must be non-negative")
     rows = [
         row for row in get_queue().list_all()
         if (row.get("unit") or {}).get("id") == unit_id
     ]
     if not rows:
         raise HTTPException(status_code=404, detail="campaign not found")
-    return {"unit_id": unit_id, "count": len(rows), "rows": rows}
+    return {"unit_id": unit_id, "count": len(rows), "offset": offset, "limit": limit,
+            "has_more": offset + limit < len(rows), "rows": rows[offset:offset + limit]}
 
 
 @app.post("/campaign/{unit_id}/cancel")

@@ -172,6 +172,7 @@ def transcode_image_bytes(blob: bytes, platform: str) -> bytes:
 
     try:
         from PIL import Image, ImageOps
+        Image.MAX_IMAGE_PIXELS = 25_000_000
     except ImportError as e:
         raise TranscodeError("Pillow not installed — `pip install Pillow`") from e
 
