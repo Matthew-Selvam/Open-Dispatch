@@ -383,27 +383,60 @@ class RedisQueue:
                 pass
         return False
 
+    def _conditional_update(self, row_id: str, allowed: set[str], patch: dict[str, Any]) -> bool:
+        pipe = self._r.pipeline()
+        if not hasattr(pipe, "watch"):
+            row = self._read(row_id)
+            if not row or row.get("status") not in allowed:
+                return False
+            row.update(patch)
+            self._write(row)
+            status = row.get("status")
+            if status == "queued":
+                self._r.zadd(self._due_key(), {row_id: _iso_to_epoch(row["scheduled_for"])})
+            else:
+                self._r.zrem(self._due_key(), row_id)
+            return True
+        try:
+            key = self._row_key(row_id)
+            pipe.watch(key)
+            row = self._read(row_id)
+            if not row or row.get("status") not in allowed:
+                pipe.unwatch()
+                return False
+            row.update(patch)
+            row["updated_at"] = _now()
+            pipe.multi()
+            pipe.set(key, json.dumps(row, ensure_ascii=False))
+            if row.get("status") == "queued":
+                pipe.zadd(self._due_key(), {row_id: _iso_to_epoch(row["scheduled_for"])})
+            else:
+                pipe.zrem(self._due_key(), row_id)
+            pipe.execute()
+            return True
+        except Exception as exc:
+            try:
+                pipe.reset()
+            except Exception:
+                pass
+            if exc.__class__.__name__ in {"WatchError", "ConnectionError", "TimeoutError"}:
+                return False
+            raise
+
     def mark_published(self, row_id: str, post_id: str) -> bool:
-        row = self._read(row_id)
-        if not row or row.get("status") not in {"queued", "publishing"}:
-            return False
-        self._update(row_id, {"status": "published", "post_id": post_id, "last_error": None})
-        return True
+        return self._conditional_update(row_id, {"publishing"},
+                                        {"status": "published", "post_id": post_id, "last_error": None})
 
     def mark_failed(self, row_id: str, err: str, dead: bool = False) -> bool:
         row = self._read(row_id) or {}
-        if row.get("status") not in {"queued", "publishing"}:
-            return False
-        self._update(row_id, {"status": "dead" if dead else "queued", "attempts": int(row.get("attempts", 0)) + 1,
-                              "last_error": err[:500]})
-        return True
+        return self._conditional_update(row_id, {"publishing"},
+                                        {"status": "dead" if dead else "queued",
+                                         "attempts": int(row.get("attempts", 0)) + 1,
+                                         "last_error": err[:500]})
 
     def retry(self, row_id: str) -> bool:
-        row = self._read(row_id)
-        if not row or row.get("status") in {"canceled", "publishing", "published"}:
-            return False
-        self._update(row_id, {"status": "queued", "last_error": None})
-        return True
+        return self._conditional_update(row_id, {"queued", "failed", "dead"},
+                                        {"status": "queued", "last_error": None})
 
     def delete(self, row_id: str) -> bool:
         pipe = self._r.pipeline()
