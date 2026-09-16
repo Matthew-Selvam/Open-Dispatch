@@ -281,19 +281,19 @@ export default function Page() {
           <GridBg />
           <div aria-hidden className="pointer-events-none absolute -right-24 top-16 size-72 rounded-full bg-gradient-to-br from-[#d6c5ff] via-[#ffb6d8] to-[#8cecff] opacity-50 blur-3xl" />
           <div aria-hidden className="pointer-events-none absolute left-[42%] top-10 size-3 rounded-full bg-[#ff5f9e] shadow-[0_0_0_10px_rgba(255,95,158,.12)]" />
-          <div className="relative mx-auto max-w-6xl px-6 py-20 md:py-32 grid md:grid-cols-2 gap-14 items-center">
+          <div className="relative mx-auto max-w-6xl px-6 py-14 md:py-20 grid md:grid-cols-2 gap-10 md:gap-12 items-center">
             <div>
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-xs font-mono text-[var(--color-body)]">
                 <span className="size-1.5 rounded-full bg-green-400 animate-pulse" />
                 v0.4.0 · MIT · 135 tests
               </div>
-              <h1 className="font-sans text-5xl sm:text-7xl font-bold leading-[.98] tracking-[-.055em]">
+              <h1 className="font-sans text-5xl sm:text-[4.25rem] font-bold leading-[.94] tracking-[-.055em]">
                 One API to{" "}
                 <span className="bg-gradient-to-r from-[#7138ff] via-[#d23cff] to-[#ff5f9e] bg-clip-text text-transparent">dispatch</span>
                 <br />your content
                 <br />anywhere.
               </h1>
-              <p className="mt-6 text-[var(--color-body)] leading-relaxed max-w-lg">
+              <p className="mt-5 text-[var(--color-body)] leading-relaxed max-w-lg">
                 Open-source infrastructure for content distribution.
                 Like Stripe for payments — except for posting.
                 One HTTP call, seven platforms, zero vendor lock-in.
@@ -308,7 +308,7 @@ export default function Page() {
                   </span>
                 ))}
               </div>
-              <div className="mt-8 flex flex-wrap gap-3">
+              <div className="mt-6 flex flex-wrap gap-3">
                 <a href="#install"
                   className="signal-gradient inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(113,56,255,.25)] transition-transform hover:-translate-y-0.5">
                   Install now <ArrowUpRight size={16} />
