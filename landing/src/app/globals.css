@@ -3,14 +3,14 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
-  --color-bg: #080c0f;
-  --color-surface: #0f1418;
-  --color-border: #1e2832;
-  --color-muted: #4a5568;
-  --color-body: #a0aec0;
-  --color-fg: #e8edf2;
-  --color-accent: #3b9eff;
-  --color-accent-dim: #1a4a7a;
+  --color-bg: #ffffff;
+  --color-surface: #ffffff;
+  --color-border: #e8e5f0;
+  --color-muted: #817b91;
+  --color-body: #625d6d;
+  --color-fg: #17131f;
+  --color-accent: #7138ff;
+  --color-accent-dim: #f0eaff;
 }
 
 body {
@@ -18,7 +18,32 @@ body {
   color: var(--color-fg);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  background-image: radial-gradient(circle at 8% 4%, rgba(188, 155, 255, .15), transparent 24rem), radial-gradient(circle at 94% 22%, rgba(255, 114, 190, .12), transparent 26rem);
 }
+
+::selection { background: #dacbff; color: #17131f; }
+
+.signal-gradient {
+  background: linear-gradient(110deg, #6d35ff 0%, #d23cff 38%, #ff5f9e 68%, #31d7ff 100%);
+}
+
+.glass-panel {
+  background: rgba(255,255,255,.76);
+  border: 1px solid rgba(113,56,255,.16);
+  box-shadow: 0 24px 70px rgba(53, 31, 92, .11), 0 2px 8px rgba(53, 31, 92, .05);
+  backdrop-filter: blur(18px);
+}
+
+.soft-shadow { box-shadow: 0 18px 45px rgba(53, 31, 92, .10), 0 2px 8px rgba(53, 31, 92, .06); }
+
+.dot-grid {
+  background-image: radial-gradient(rgba(113,56,255,.24) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+@keyframes float-signal { 0%,100% { transform: translate3d(0,0,0); } 50% { transform: translate3d(0,-8px,0); } }
+.float-signal { animation: float-signal 5s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .float-signal, .animate-pulse { animation: none !important; } * { scroll-behavior: auto !important; } }
 
 /* Syntax highlight token colors */
 .token-keyword  { color: #79d1ff; }

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { ArrowUpRight, Check, ChevronRight, CircleDot, Code2, Layers3, LockKeyhole, Network, Send, Sparkles, Terminal, Zap } from "lucide-react";
 
 const GITHUB = "https://github.com/Matthew-Selvam/Open-Dispatch";
 const DMG_URL  = "https://github.com/Matthew-Selvam/Open-Dispatch/releases/latest/download/Open-Dispatch-0.4.0.dmg";
@@ -19,12 +20,12 @@ const PLATFORMS = [
 ];
 
 const FEATURES = [
-  { icon: "⚡", title: "API-first",         body: "Every action reachable via one HTTP call. Automate from cron, n8n, AI agents, or your own app — no dashboard required." },
-  { icon: "🖥️", title: "Web UI included",   body: "HTMX-powered dark dashboard: compose, retry, watch the queue live. Same port as the API — zero JS build step." },
-  { icon: "🏗️", title: "3 queue backends",  body: "JSONL on disk (zero infra), Redis (multi-worker), or Postgres (ACID + SKIP LOCKED). Swap with a single env var." },
-  { icon: "🤖", title: "AI caption adapt",  body: "One source text → per-platform rewrites. Ollama-first, OpenRouter fallback, heuristic safety net. Never 500s." },
-  { icon: "🖼️", title: "Media transcoding", body: "10 platform image specs built in — square, reels, 16:9, portrait. REST endpoint + Python API." },
-  { icon: "🔌", title: "n8n node",          body: "Native integration: Dispatch, Adapt, Get Row, Retry, List Queue — all 5 ops, zero JSON wiring." },
+  { icon: Zap, title: "API-first",         body: "Every action reachable via one HTTP call. Automate from cron, n8n, AI agents, or your own app — no dashboard required." },
+  { icon: Network, title: "Web UI included",   body: "HTMX-powered dashboard: compose, retry, watch the queue live. Same port as the API — zero JS build step." },
+  { icon: Layers3, title: "3 queue backends",  body: "JSONL on disk, Redis, or Postgres. Swap the persistence layer with a single environment variable." },
+  { icon: Sparkles, title: "AI caption adapt",  body: "One source text → per-platform rewrites. Ollama-first, OpenRouter fallback, heuristic safety net." },
+  { icon: CircleDot, title: "Media transcoding", body: "10 platform image specs built in — square, reels, 16:9, portrait. REST endpoint + Python API." },
+  { icon: Code2, title: "n8n node",          body: "Native integration: Dispatch, Adapt, Get Row, Retry, List Queue — all 5 ops, zero JSON wiring." },
 ];
 
 // ── hosted-tool comparison ───────────────────────────────────────────────────────
@@ -254,7 +255,7 @@ export default function Page() {
   return (
     <>
       {/* ── NAV ─────────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 border-b border-[var(--color-border)] bg-[var(--color-bg)]/90 backdrop-blur">
+      <header className="sticky top-0 z-50 border-b border-[var(--color-border)] bg-white/85 backdrop-blur-xl">
         <div className="mx-auto max-w-6xl px-6 h-14 flex items-center justify-between">
           <Link href="/" className="font-mono text-sm font-semibold text-[var(--color-fg)] tracking-tight hover:opacity-80 transition-opacity" aria-label="Open-Dispatch home">
             open<span className="text-[var(--color-accent)]">-dispatch</span>
@@ -266,7 +267,7 @@ export default function Page() {
             <Link href="/api-reference" className="hover:text-[var(--color-fg)] transition-colors hidden sm:block">API</Link>
             <Link
               href={GITHUB} target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1.5 rounded border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-fg)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] transition-colors"
+              className="flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-fg)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] transition-colors"
             >
               <GitHubIcon /> GitHub
             </Link>
@@ -276,17 +277,19 @@ export default function Page() {
 
       <main>
         {/* ── HERO ──────────────────────────────────────────────────────── */}
-        <section className="relative overflow-hidden border-b border-[var(--color-border)]">
+        <section className="relative overflow-hidden border-b border-[var(--color-border)] bg-white">
           <GridBg />
+          <div aria-hidden className="pointer-events-none absolute -right-24 top-16 size-72 rounded-full bg-gradient-to-br from-[#d6c5ff] via-[#ffb6d8] to-[#8cecff] opacity-50 blur-3xl" />
+          <div aria-hidden className="pointer-events-none absolute left-[42%] top-10 size-3 rounded-full bg-[#ff5f9e] shadow-[0_0_0_10px_rgba(255,95,158,.12)]" />
           <div className="relative mx-auto max-w-6xl px-6 py-20 md:py-32 grid md:grid-cols-2 gap-14 items-center">
             <div>
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-xs font-mono text-[var(--color-body)]">
                 <span className="size-1.5 rounded-full bg-green-400 animate-pulse" />
                 v0.4.0 · MIT · 135 tests
               </div>
-              <h1 className="font-sans text-5xl sm:text-6xl font-bold leading-[1.1] tracking-tight">
+              <h1 className="font-sans text-5xl sm:text-7xl font-bold leading-[.98] tracking-[-.055em]">
                 One API to{" "}
-                <span className="text-[var(--color-accent)]">dispatch</span>
+                <span className="bg-gradient-to-r from-[#7138ff] via-[#d23cff] to-[#ff5f9e] bg-clip-text text-transparent">dispatch</span>
                 <br />your content
                 <br />anywhere.
               </h1>
@@ -307,17 +310,18 @@ export default function Page() {
               </div>
               <div className="mt-8 flex flex-wrap gap-3">
                 <a href="#install"
-                  className="inline-flex items-center gap-2 rounded bg-[var(--color-accent)] px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity">
-                  Install now ↓
+                  className="signal-gradient inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(113,56,255,.25)] transition-transform hover:-translate-y-0.5">
+                  Install now <ArrowUpRight size={16} />
                 </a>
                 <Link href={GITHUB} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 rounded border border-[var(--color-border)] px-5 py-2.5 text-sm font-semibold text-[var(--color-fg)] hover:border-[var(--color-accent)] transition-colors">
+                  className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-sm font-semibold text-[var(--color-fg)] shadow-sm hover:border-[var(--color-accent)] transition-colors">
                   <GitHubIcon /> Star on GitHub
                 </Link>
               </div>
             </div>
 
             {/* dispatch snippet */}
+            <div className="float-signal">
             <CodeCard filename="dispatch.sh">
               <span className="text-[#79d1ff]">curl</span>
               {` -X POST http://localhost:8000/dispatch \\
@@ -355,6 +359,7 @@ export default function Page() {
               {`}\n  }\n`}
               <span className="text-[#e8c97d]">{`}'`}</span>
             </CodeCard>
+            </div>
           </div>
         </section>
 
@@ -473,13 +478,17 @@ export default function Page() {
               Everything you need. Nothing you don&apos;t.
             </h2>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {FEATURES.map(f => (
-                <div key={f.title} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
-                  <div className="text-2xl mb-3">{f.icon}</div>
+              {FEATURES.map(f => {
+                const FeatureIcon = f.icon;
+                return (
+                <div key={f.title} className="group relative overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white p-6 soft-shadow transition-all duration-300 hover:-translate-y-1 hover:border-[#b9a1ff] hover:shadow-[0_24px_60px_rgba(113,56,255,.16)]">
+                  <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-[#7138ff] via-[#ff5f9e] to-[#31d7ff] opacity-70" />
+                  <div className="mb-5 flex size-11 items-center justify-center rounded-xl bg-[#f0eaff] text-[var(--color-accent)] transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110"><FeatureIcon size={20} strokeWidth={2.2} /></div>
                   <h3 className="font-semibold text-[var(--color-fg)] mb-2">{f.title}</h3>
                   <p className="text-sm text-[var(--color-body)] leading-relaxed">{f.body}</p>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </section>
@@ -487,12 +496,17 @@ export default function Page() {
         {/* ── API REFERENCE ─────────────────────────────────────────────── */}
         <section id="api" className="border-b border-[var(--color-border)]">
           <div className="mx-auto max-w-6xl px-6 py-20">
+            <div className="mb-8 flex items-end justify-between gap-4">
+              <div>
             <h2 className="text-2xl font-bold tracking-tight mb-3">Simple, stable API.</h2>
             <p className="text-[var(--color-body)] mb-8 max-w-2xl text-sm">
               Every endpoint is reachable over plain HTTP.{" "}
               <code className="bg-[var(--color-surface)] border border-[var(--color-border)] px-1.5 py-0.5 rounded text-xs">/queue/&#123;id&#125;</code>
               {" "}content-negotiates — browsers get the HTML detail page, API clients get JSON.
             </p>
+              </div>
+              <div className="hidden md:flex size-14 items-center justify-center rounded-2xl bg-[#f0eaff] text-[var(--color-accent)]"><Terminal size={25} /></div>
+            </div>
             <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]">
               <table className="w-full text-sm font-mono">
                 <thead>
