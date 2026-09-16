@@ -287,9 +287,8 @@ export default function Page() {
                 <span className="size-1.5 rounded-full bg-green-400 animate-pulse" />
                 v0.4.0 · MIT · 135 tests
               </div>
-              <h1 className="font-sans text-5xl sm:text-[4.25rem] font-bold leading-[.94] tracking-[-.055em]">
-                One API to{" "}
-                <span className="bg-gradient-to-r from-[#7138ff] via-[#d23cff] to-[#ff5f9e] bg-clip-text text-transparent">dispatch</span>
+              <h1 className="font-sans text-5xl sm:text-[3.6rem] font-bold leading-[.94] tracking-[-.055em]">
+                One API to <span className="bg-gradient-to-r from-[#7138ff] via-[#d23cff] to-[#ff5f9e] bg-clip-text text-transparent">dispatch</span>
                 <br />your content
                 <br />anywhere.
               </h1>
