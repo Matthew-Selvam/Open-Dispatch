@@ -41,6 +41,31 @@ body {
   background-size: 16px 16px;
 }
 
+.dark {
+  --color-bg: #0d0a14;
+  --color-surface: #171321;
+  --color-border: #332943;
+  --color-muted: #958aa8;
+  --color-body: #c0b6ca;
+  --color-fg: #faf7ff;
+  --color-accent: #a987ff;
+  --color-accent-dim: #2b1f4a;
+  color-scheme: dark;
+}
+
+.dark body {
+  background-color: var(--color-bg);
+  background-image: radial-gradient(circle at 8% 4%, rgba(113,56,255,.22), transparent 24rem), radial-gradient(circle at 94% 22%, rgba(255,95,158,.16), transparent 26rem);
+}
+
+.dark .bg-white { background-color: #171321; }
+.dark .bg-white\/85 { background-color: rgba(13,10,20,.86); }
+.dark .bg-\[\#f0eaff\] { background-color: #2b1f4a; }
+.dark .dot-grid { background-image: radial-gradient(rgba(169,135,255,.28) 1px, transparent 1px); }
+.dark .glass-panel { background: rgba(23,19,33,.76); border-color: rgba(169,135,255,.24); box-shadow: 0 24px 70px rgba(0,0,0,.28), 0 2px 8px rgba(0,0,0,.18); }
+.dark .soft-shadow { box-shadow: 0 18px 45px rgba(0,0,0,.28), 0 2px 8px rgba(0,0,0,.18); }
+.dark .text-\[\#17131f\] { color: var(--color-fg); }
+
 @keyframes float-signal { 0%,100% { transform: translate3d(0,0,0); } 50% { transform: translate3d(0,-8px,0); } }
 .float-signal { animation: float-signal 5s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .float-signal, .animate-pulse { animation: none !important; } * { scroll-behavior: auto !important; } }

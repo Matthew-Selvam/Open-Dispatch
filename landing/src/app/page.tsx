@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { ArrowUpRight, Check, ChevronRight, CircleDot, Code2, Layers3, LockKeyhole, Network, Send, Sparkles, Terminal, Zap } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowUpRight, Check, ChevronRight, CircleDot, Code2, Layers3, LockKeyhole, Moon, Network, Send, Sparkles, Sun, Terminal, Zap } from "lucide-react";
 
 const GITHUB = "https://github.com/Matthew-Selvam/Open-Dispatch";
 const DMG_URL  = "https://github.com/Matthew-Selvam/Open-Dispatch/releases/latest/download/Open-Dispatch-0.4.0.dmg";
@@ -251,6 +251,17 @@ const FAQS = [
 
 export default function Page() {
   const [activeInstall, setActiveInstall] = useState<InstallKey>("brew");
+  const [darkMode, setDarkMode] = useState(false);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("open-dispatch-theme");
+    setDarkMode(saved === "dark");
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", darkMode);
+    window.localStorage.setItem("open-dispatch-theme", darkMode ? "dark" : "light");
+  }, [darkMode]);
 
   return (
     <>
@@ -271,6 +282,14 @@ export default function Page() {
             >
               <GitHubIcon /> GitHub
             </Link>
+            <button
+              type="button"
+              onClick={() => setDarkMode(value => !value)}
+              aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+              className="flex size-9 items-center justify-center rounded-full border border-[var(--color-border)] bg-white text-[var(--color-fg)] transition-colors hover:border-[var(--color-accent)] dark:bg-[#171321]"
+            >
+              {darkMode ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
           </nav>
         </div>
       </header>
