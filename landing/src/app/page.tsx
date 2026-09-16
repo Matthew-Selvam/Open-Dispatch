@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { ArrowUpRight, Check, ChevronRight, CircleDot, Code2, Layers3, LockKeyhole, Moon, Network, Send, Sparkles, Sun, Terminal, Zap } from "lucide-react";
+import { useState } from "react";
+import { ArrowUpRight, Check, ChevronRight, CircleDot, Code2, Layers3, LockKeyhole, Network, Send, Sparkles, Terminal, Zap } from "lucide-react";
 
 const GITHUB = "https://github.com/Matthew-Selvam/Open-Dispatch";
 const DMG_URL  = "https://github.com/Matthew-Selvam/Open-Dispatch/releases/latest/download/Open-Dispatch-0.4.0.dmg";
@@ -251,22 +251,11 @@ const FAQS = [
 
 export default function Page() {
   const [activeInstall, setActiveInstall] = useState<InstallKey>("brew");
-  const [darkMode, setDarkMode] = useState(false);
-
-  useEffect(() => {
-    const saved = window.localStorage.getItem("open-dispatch-theme");
-    setDarkMode(saved === "dark");
-  }, []);
-
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", darkMode);
-    window.localStorage.setItem("open-dispatch-theme", darkMode ? "dark" : "light");
-  }, [darkMode]);
 
   return (
     <>
       {/* ── NAV ─────────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 border-b border-[var(--color-border)] bg-white/85 backdrop-blur-xl">
+      <header className="sticky top-0 z-50 border-b border-[var(--color-border)] bg-[var(--color-bg)]/85 backdrop-blur-xl">
         <div className="mx-auto max-w-6xl px-6 h-14 flex items-center justify-between">
           <Link href="/" className="font-mono text-sm font-semibold text-[var(--color-fg)] tracking-tight hover:opacity-80 transition-opacity" aria-label="Open-Dispatch home">
             open<span className="text-[var(--color-accent)]">-dispatch</span>
@@ -282,21 +271,14 @@ export default function Page() {
             >
               <GitHubIcon /> GitHub
             </Link>
-            <button
-              type="button"
-              onClick={() => setDarkMode(value => !value)}
-              aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
-              className="flex size-9 items-center justify-center rounded-full border border-[var(--color-border)] bg-white text-[var(--color-fg)] transition-colors hover:border-[var(--color-accent)] dark:bg-[#171321]"
-            >
-              {darkMode ? <Sun size={16} /> : <Moon size={16} />}
-            </button>
+
           </nav>
         </div>
       </header>
 
       <main>
         {/* ── HERO ──────────────────────────────────────────────────────── */}
-        <section className="relative overflow-hidden border-b border-[var(--color-border)] bg-white">
+        <section className="relative overflow-hidden border-b border-[var(--color-border)] bg-[var(--color-bg)]">
           <GridBg />
           <div aria-hidden className="pointer-events-none absolute -right-24 top-16 size-72 rounded-full bg-gradient-to-br from-[#d6c5ff] via-[#ffb6d8] to-[#8cecff] opacity-50 blur-3xl" />
           <div aria-hidden className="pointer-events-none absolute left-[42%] top-10 size-3 rounded-full bg-[#ff5f9e] shadow-[0_0_0_10px_rgba(255,95,158,.12)]" />
@@ -325,7 +307,7 @@ export default function Page() {
                   Install now <ArrowUpRight size={16} />
                 </a>
                 <Link href={GITHUB} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-sm font-semibold text-[var(--color-fg)] shadow-sm hover:border-[var(--color-accent)] transition-colors">
+                  className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-2.5 text-sm font-semibold text-[var(--color-fg)] shadow-sm hover:border-[var(--color-accent)] transition-colors">
                   <GitHubIcon /> Star on GitHub
                 </Link>
               </div>
@@ -499,9 +481,9 @@ export default function Page() {
               {FEATURES.map(f => {
                 const FeatureIcon = f.icon;
                 return (
-                <div key={f.title} className="group relative overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white p-6 soft-shadow transition-all duration-300 hover:-translate-y-1 hover:border-[#b9a1ff] hover:shadow-[0_24px_60px_rgba(113,56,255,.16)]">
+                <div key={f.title} className="group relative overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 soft-shadow transition-all duration-300 hover:-translate-y-1 hover:border-[#b9a1ff] hover:shadow-[0_24px_60px_rgba(113,56,255,.16)]">
                   <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-[#7138ff] via-[#ff5f9e] to-[#31d7ff] opacity-70" />
-                  <div className="mb-5 flex size-11 items-center justify-center rounded-xl bg-[#f0eaff] text-[var(--color-accent)] transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110"><FeatureIcon size={20} strokeWidth={2.2} /></div>
+                  <div className="mb-5 flex size-11 items-center justify-center rounded-xl bg-[var(--color-accent-dim)] text-[var(--color-accent)] transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110"><FeatureIcon size={20} strokeWidth={2.2} /></div>
                   <h3 className="font-semibold text-[var(--color-fg)] mb-2">{f.title}</h3>
                   <p className="text-sm text-[var(--color-body)] leading-relaxed">{f.body}</p>
                 </div>
@@ -523,7 +505,7 @@ export default function Page() {
               {" "}content-negotiates — browsers get the HTML detail page, API clients get JSON.
             </p>
               </div>
-              <div className="hidden md:flex size-14 items-center justify-center rounded-2xl bg-[#f0eaff] text-[var(--color-accent)]"><Terminal size={25} /></div>
+              <div className="hidden md:flex size-14 items-center justify-center rounded-2xl bg-[var(--color-accent-dim)] text-[var(--color-accent)]"><Terminal size={25} /></div>
             </div>
             <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]">
               <table className="w-full text-sm font-mono">
