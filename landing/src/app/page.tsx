@@ -301,13 +301,6 @@ export default function Page() {
               <p className="mt-3 text-sm font-medium text-[var(--color-fg)] max-w-lg">
                 No per-account fees. No paywalls. No vendor lock-in.
               </p>
-              <div className="mt-5 flex flex-wrap gap-2">
-                {PLATFORMS.map(p => (
-                  <span key={p.name} className="flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-xs text-[var(--color-body)]">
-                    {p.icon} {p.name}
-                  </span>
-                ))}
-              </div>
               <div className="mt-6 flex flex-wrap gap-3">
                 <a href="#install"
                   className="signal-gradient inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(113,56,255,.25)] transition-transform hover:-translate-y-0.5">
@@ -317,6 +310,13 @@ export default function Page() {
                   className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-sm font-semibold text-[var(--color-fg)] shadow-sm hover:border-[var(--color-accent)] transition-colors">
                   <GitHubIcon /> Star on GitHub
                 </Link>
+              </div>
+              <div className="mt-5 flex flex-wrap gap-2">
+                {PLATFORMS.map(p => (
+                  <span key={p.name} className="flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-xs text-[var(--color-body)]">
+                    {p.icon} {p.name}
+                  </span>
+                ))}
               </div>
             </div>
 
