@@ -36,6 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Per-row delete** and **bulk purge** (clear published / clear dead) in the dashboard.
 
 ### Fixed
+- **`CREDENTIALS_GUIDE.html` now exists.** The README and the landing page both pointed at it as
+  the answer to "where do I get API keys", but the file was never committed — a 404 on the main
+  conversion path, with no equivalent elsewhere in the repo. Built it for all 10 platforms,
+  organised by where each credential is acquired rather than by variable name, with troubleshooting
+  and a security-notes section.
+- **Documented `OPEN_DISPATCH_MEDIA_DIR` in `.env.example`.** It is what enables media path
+  confinement (`media/paths.py` skips the `relative_to(root)` check when it is unset), so an
+  operator had no way to discover the one variable that turns a security control on.
 - **A typo in `THREADS_SETTLE_SECONDS` silently lost the post.** `int("abc")` raised out of
   `publish()`, and because `list_due()` only returns `queued` rows with no reaper for stuck claims,
   the row stayed in `publishing` forever with `attempts=0` and no recorded error. The value is now
