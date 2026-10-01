@@ -79,7 +79,8 @@ class QueueProtocol(Protocol):
     def list_due(self, now_iso: str) -> list[dict]: ...
     def mark_publishing(self, row_id: str) -> bool: ...
     def mark_published(self, row_id: str, post_id: str) -> bool: ...
-    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> bool: ...
+    def mark_failed(self, row_id: str, err: str, dead: bool = False,
+                    retry_at: str | None = None) -> bool: ...
     def retry(self, row_id: str) -> bool: ...
     def delete(self, row_id: str) -> bool: ...
     def cancel_campaign(self, unit_id: str) -> list[dict]: ...
@@ -167,10 +168,17 @@ class JsonlQueue:
             _write_all(rows)
 
     def mark_publishing(self, row_id: str) -> bool:
+        """Claim a row for publishing.
+
+        Requires status == "queued" AND the row being due. Without the due
+        check, a worker holding an id from an earlier list_due() can claim a
+        row that another worker has since backed off to a future time.
+        """
         with _LOCK:
             rows = _read_all()
+            due_epoch = _iso_to_epoch(_now())
             for r in rows:
-                if r["id"] == row_id and r.get("status") == "queued":
+                if r["id"] == row_id and r.get("status") == "queued" and _row_due(r, due_epoch):
                     r["status"] = "publishing"
                     r["updated_at"] = _now()
                     _write_all(rows)
@@ -187,13 +195,21 @@ class JsonlQueue:
                     return True
         return False
 
-    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> bool:
+    def mark_failed(self, row_id: str, err: str, dead: bool = False,
+                    retry_at: str | None = None) -> bool:
         with _LOCK:
             rows = _read_all()
             for r in rows:
                 if r["id"] == row_id and r.get("status") in {"queued", "publishing"}:
-                    r.update({"status": "dead" if dead else "queued", "attempts": int(r.get("attempts", 0)) + 1,
-                              "last_error": err[:500], "updated_at": _now()})
+                    patch = {"status": "dead" if dead else "queued",
+                             "attempts": int(r.get("attempts", 0)) + 1,
+                             "last_error": err[:500], "updated_at": _now()}
+                    # Apply the backoff in the SAME write as the status flip,
+                    # otherwise the row is briefly "queued" with a past
+                    # scheduled_for and another worker claims it immediately.
+                    if retry_at and not dead:
+                        patch["scheduled_for"] = retry_at
+                    r.update(patch)
                     _write_all(rows)
                     return True
         return False
@@ -352,19 +368,20 @@ class RedisQueue:
             self._r.zrem(self._due_key(), row_id)
 
     def mark_publishing(self, row_id: str) -> bool:
+        """Claim a due row. A row backed off to a future time cannot be claimed."""
         # Optimistic transaction makes the queued check and state transition atomic.
         pipe = self._r.pipeline()
         key = self._row_key(row_id)
         if not hasattr(pipe, "watch"):
             row = self._read(row_id)
-            if row and row.get("status") == "queued":
+            if row and row.get("status") == "queued" and _row_due(row, _iso_to_epoch(_now())):
                 self._update(row_id, {"status": "publishing"})
                 return True
             return False
         try:
             pipe.watch(key)
             row = self._read(row_id)
-            if not row or row.get("status") != "queued":
+            if not row or row.get("status") != "queued" or not _row_due(row, _iso_to_epoch(_now())):
                 pipe.unwatch()
                 return False
             row["status"] = "publishing"
@@ -427,12 +444,16 @@ class RedisQueue:
         return self._conditional_update(row_id, {"publishing"},
                                         {"status": "published", "post_id": post_id, "last_error": None})
 
-    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> bool:
+    def mark_failed(self, row_id: str, err: str, dead: bool = False,
+                    retry_at: str | None = None) -> bool:
         row = self._read(row_id) or {}
-        return self._conditional_update(row_id, {"publishing"},
-                                        {"status": "dead" if dead else "queued",
-                                         "attempts": int(row.get("attempts", 0)) + 1,
-                                         "last_error": err[:500]})
+        patch = {"status": "dead" if dead else "queued",
+                 "attempts": int(row.get("attempts", 0)) + 1,
+                 "last_error": err[:500]}
+        # Same-write backoff: see JsonlQueue.mark_failed for why.
+        if retry_at and not dead:
+            patch["scheduled_for"] = retry_at
+        return self._conditional_update(row_id, {"publishing"}, patch)
 
     def retry(self, row_id: str) -> bool:
         return self._conditional_update(row_id, {"queued", "failed", "dead"},
@@ -622,10 +643,12 @@ class PostgresQueue:
 
         A row already publishing or completed is a no-op.
         """
+        # The scheduled_for guard matters as much as the status guard: a worker
+        # holding a stale id must not claim a row another worker backed off.
         sql = f"""
             UPDATE {self.TABLE}
             SET status = 'publishing', updated_at = now()
-            WHERE id = %s AND status = 'queued'
+            WHERE id = %s AND status = 'queued' AND scheduled_for <= now()
         """
         with self._conn() as conn, conn.cursor() as cur:
             cur.execute(sql, (row_id,))
@@ -637,10 +660,16 @@ class PostgresQueue:
             cur.execute(sql, (post_id, row_id))
             return getattr(cur, "rowcount", 1) > 0
 
-    def mark_failed(self, row_id: str, err: str, dead: bool = False) -> bool:
-        sql = f"UPDATE {self.TABLE} SET status = %s, attempts = attempts + 1, last_error = %s, updated_at = now() WHERE id = %s AND status = 'publishing'"
+    def mark_failed(self, row_id: str, err: str, dead: bool = False,
+                    retry_at: str | None = None) -> bool:
+        # scheduled_for moves in the SAME statement as the status flip, so no
+        # other worker can observe a 'queued' row that is already past due.
+        sql = (f"UPDATE {self.TABLE} SET status = %s, attempts = attempts + 1, "
+               f"last_error = %s, scheduled_for = COALESCE(%s, scheduled_for), "
+               f"updated_at = now() WHERE id = %s AND status = 'publishing'")
         with self._conn() as conn, conn.cursor() as cur:
-            cur.execute(sql, ("dead" if dead else "queued", err[:500], row_id))
+            cur.execute(sql, ("dead" if dead else "queued", err[:500],
+                              None if dead else retry_at, row_id))
             return getattr(cur, "rowcount", 1) > 0
 
     def retry(self, row_id: str) -> bool:

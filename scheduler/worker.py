@@ -115,13 +115,19 @@ def run_once() -> int:
             attempts = int(row.get("attempts", 0)) + 1
             dead = attempts >= MAX_ATTEMPTS
             log.error("✘ %s (attempt %d): %s", rid, attempts, err)
-            committed = q.mark_failed(rid, err, dead=dead)
-            if committed and not dead:
-                # Re-schedule with backoff
+            # Compute the backoff up front and hand it to mark_failed, so the
+            # status flip and the reschedule land in one guarded write. Doing it
+            # as a separate _update() afterwards left the row briefly "queued"
+            # with a past scheduled_for, which another worker could claim — the
+            # backoff was silently skipped and the stale reschedule landed on an
+            # already-publishing row.
+            retry_at = None
+            if not dead:
                 backoff = _backoff_seconds(attempts)
                 new_sf = datetime.now(tz=timezone.utc).timestamp() + backoff
-                new_sf_iso = datetime.fromtimestamp(new_sf, tz=timezone.utc).isoformat()
-                q._update(rid, {"scheduled_for": new_sf_iso})  # noqa: SLF001
+                retry_at = datetime.fromtimestamp(new_sf, tz=timezone.utc).isoformat()
+            committed = q.mark_failed(rid, err, dead=dead, retry_at=retry_at)
+            if committed and not dead:
                 log.info("  retry in %ds", backoff)
             if committed and webhook:
                 _fire_webhook(webhook, {"event": "failed", "id": rid, "error": err,

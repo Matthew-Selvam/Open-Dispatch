@@ -222,7 +222,60 @@ def test_mark_failed_increments_attempts():
     sql, params = state["last"].executions[0]  # type: ignore[union-attr]
     # Uses attempts = attempts + 1 (no read-modify-write)
     assert "attempts = attempts + 1" in sql
-    assert params == ("queued", "rate limit", "abc-123")
+    # scheduled_for is rescheduled in the same statement via COALESCE, so the
+    # params are (status, error, retry_at, row_id). With no retry_at, COALESCE
+    # leaves scheduled_for untouched.
+    assert "COALESCE(%s, scheduled_for)" in sql
+    assert params == ("queued", "rate limit", None, "abc-123")
+
+
+def test_mark_failed_applies_retry_at_in_the_same_statement():
+    state = {}
+
+    def factory():
+        c = FakeConn()
+        state["last"] = c
+        return c
+
+    q = PostgresQueue(factory)
+    state["last"].executions.clear()  # type: ignore[union-attr]
+    q.mark_failed("abc-123", "boom", retry_at="2099-01-01T00:00:00+00:00")
+    _sql, params = state["last"].executions[0]  # type: ignore[union-attr]
+    assert params == ("queued", "boom", "2099-01-01T00:00:00+00:00", "abc-123")
+
+
+def test_mark_failed_dead_does_not_reschedule():
+    state = {}
+
+    def factory():
+        c = FakeConn()
+        state["last"] = c
+        return c
+
+    q = PostgresQueue(factory)
+    state["last"].executions.clear()  # type: ignore[union-attr]
+    q.mark_failed("abc-123", "fatal", dead=True, retry_at="2099-01-01T00:00:00+00:00")
+    _sql, params = state["last"].executions[0]  # type: ignore[union-attr]
+    # A dead row must keep its original scheduled_for, so the retry_at is
+    # forced to None even though the caller passed one.
+    assert params == ("dead", "fatal", None, "abc-123")
+
+
+def test_mark_publishing_requires_the_row_to_be_due():
+    state = {}
+
+    def factory():
+        c = FakeConn()
+        state["last"] = c
+        return c
+
+    q = PostgresQueue(factory)
+    state["last"].executions.clear()  # type: ignore[union-attr]
+    q.mark_publishing("abc-123")
+    sql, _params = state["last"].executions[0]  # type: ignore[union-attr]
+    # The due guard prevents a worker with a stale id from claiming a row that
+    # another worker has backed off to a future scheduled_for.
+    assert "scheduled_for <= now()" in sql
 
 
 def test_mark_failed_dead_sets_dead_status():
