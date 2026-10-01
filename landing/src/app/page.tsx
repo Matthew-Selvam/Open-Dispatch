@@ -289,7 +289,7 @@ export default function Page() {
             <div>
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-xs font-mono text-[var(--color-body)]">
                 <span className="size-1.5 rounded-full bg-green-400 animate-pulse" />
-                v0.4.0 · MIT · 185 tests
+                v0.4.0 · MIT · 199 tests
               </div>
               <h1 className="font-sans text-5xl sm:text-[3.6rem] font-bold leading-[.94] tracking-[-.055em]">
                 One API to <span className="bg-gradient-to-r from-[#7138ff] via-[#d23cff] to-[#ff5f9e] bg-clip-text text-transparent">dispatch</span>
@@ -663,7 +663,7 @@ scheduler/worker.py
               </Link>
             </div>
             <p className="mt-8 text-xs text-[var(--color-muted)]">
-              185 tests · 10 platform adapters · 3 queue backends · 5 install methods
+              199 tests · 10 platform adapters · 3 queue backends · 5 install methods
             </p>
           </div>
         </section>

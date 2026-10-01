@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **CLI and MCP server authenticate against a secured instance** — both now read
+  `OPEN_DISPATCH_API_TOKEN` and send it as a bearer header, so they no longer 401 when the
+  server requires auth. The CLI also takes `--token`. A 401/403 from either client now names the
+  variable instead of surfacing a bare HTTP error. The n8n node already supported this via its
+  **API Key Header** credential field.
+- **MCP server works with mcp 2.x** — `FastMCP` was renamed `MCPServer` in the 2.0 SDK and the
+  previous import raised `SystemExit` on any current install, breaking the server outright. The
+  import now accepts either major version.
 - **Optional API access control** — set `OPEN_DISPATCH_API_TOKEN` to require an
   `Authorization` header carrying a bearer token on every route except `/healthz`,
   plus an `Origin` check on state-changing requests. Unset by default; see the

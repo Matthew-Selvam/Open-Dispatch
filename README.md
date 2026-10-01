@@ -266,11 +266,15 @@ Authorization: Bearer <your token>
 
 Requests without a valid token get `401`.
 
-> **Client caveat:** the CLI (`cli.py`), the MCP server (`mcp_server.py`), and the
-> n8n node do not send an `Authorization` header yet, so they will get `401`
-> once this variable is set. Until that's wired up, use the token for direct API
-> access and browser/dashboard use, or keep the server on a trusted network
-> without it. Wiring the header through is tracked in the README roadmap.
+All three bundled clients send it automatically once the variable is set in
+> their environment:
+>
+> - **CLI** — reads `OPEN_DISPATCH_API_TOKEN`, or pass `--token <value>`
+> - **MCP server** (`mcp_server.py`) — reads `OPEN_DISPATCH_API_TOKEN`
+> - **n8n node** — paste it into the credential's **API Key Header** field
+>
+> A `401` or `403` from any of them names this variable rather than dumping a
+> bare HTTP error.
 
 State-changing requests (`POST`/`PUT`/`PATCH`/`DELETE`) are additionally checked
 against the `Origin` header, and must be sent **without** an `Authorization`
@@ -449,7 +453,7 @@ The credential just needs your Open-Dispatch base URL (plus an optional bearer i
 
 ## MCP server (Claude Desktop, Cursor, AI agents)
 
-`mcp_server.py` wraps the entire Open-Dispatch API as an MCP server — 7 tools usable from Claude Desktop, Cursor, or any MCP-compatible AI agent via natural language.
+`mcp_server.py` wraps the entire Open-Dispatch API as an MCP server — 10 tools usable from Claude Desktop, Cursor, or any MCP-compatible AI agent via natural language.
 
 ```bash
 pip install "open-dispatch[mcp]"
@@ -566,7 +570,7 @@ Full endpoint reference: [open-dispatch.vercel.app/api-reference](https://open-d
 
 ```bash
 pytest -q
-# 185 tests — schema, queue, API, media, and adapter coverage — no network, no real credentials
+# 199 tests — schema, queue, API, media, and adapter coverage — no network, no real credentials
 ```
 
 ---
@@ -588,10 +592,9 @@ pytest -q
 - [x] macOS menubar app + DMG
 - [x] **TikTok adapter** (Content Posting API v2 — PULL_FROM_URL)
 - [x] **Facebook adapter** (Meta Graph API v19 — text, photo, video)
-- [x] **MCP server** (`mcp_server.py` — 7 tools, works with Claude Desktop, Cursor, any MCP client)
+- [x] **MCP server** (`mcp_server.py` — 10 tools, works with Claude Desktop, Cursor, any MCP client;
+      compatible with mcp 1.x and 2.x)
 - [ ] Video transcoding (ffmpeg-backed)
-- [ ] Send `Authorization: Bearer` from the CLI, MCP server, and n8n node so
-      they work when `OPEN_DISPATCH_API_TOKEN` is set
 - [ ] Calendar view in dashboard
 - [ ] Bulk CSV import
 - [ ] Analytics (fetch engagement metrics per post)
