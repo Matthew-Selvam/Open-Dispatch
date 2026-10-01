@@ -93,7 +93,7 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
 
 ## 5. ✅ Already shipped — DO NOT redo
 
-- All 7 adapters; queue backends; worker + heartbeat; health dashboard with
+- All 10 adapters; queue backends; worker + heartbeat; health dashboard with
   worker status + retry-all; compose page (datetime-local picker → ISO-8601, live
   char counters); delete/purge; profiles (named credential sets); AI caption adapter.
 - README (badges, demo hero, star CTA, star-history), CHANGELOG (keep-a-changelog

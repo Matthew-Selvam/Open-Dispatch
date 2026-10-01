@@ -75,7 +75,7 @@ TELEGRAM_BOT_TOKEN=123456:ABC-...
 TELEGRAM_CHAT_ID=@your_channel
 ```
 
-The full variable list for all seven platforms is in [`.env.example`](../.env.example).
+The full variable list for all ten platforms is in [`.env.example`](../.env.example).
 
 > **Running several brands or clients?** Use **Profiles** instead of one flat `.env`. Each
 > profile is a named set of per-platform credentials you pick at dispatch time — the
