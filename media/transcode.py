@@ -26,6 +26,7 @@ import io
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from media.paths import resolve_media_destination, resolve_media_path
 
 log = logging.getLogger("open-dispatch.media.transcode")
 
@@ -141,12 +142,18 @@ def transcode_image(src_path: str | Path, platform: str,
                     dest_path: str | Path | None = None) -> Path:
     """Read an image from disk, transcode for `platform`, write back to disk.
 
-    If `dest_path` is None, writes to `<src>.<platform>.<ext>` next to the source.
+    Both the source read and the write are confined to the media root
+    (`media.paths.resolve_media_path` / `resolve_media_destination`), so
+    output lands under that root — normally `<media_root>/<src name>.<platform>.<ext>`
+    — not beside the source file. `dest_path` is therefore interpreted
+    relative to the media root and may not escape it.
+
     Returns the destination Path.
     """
-    src = Path(src_path)
-    if not src.exists():
-        raise TranscodeError(f"source image not found: {src}")
+    try:
+        src = resolve_media_path(src_path)
+    except Exception as e:
+        raise TranscodeError(f"source image not found: {src_path}") from e
     spec = PLATFORM_IMAGE_SPECS.get(platform)
     if not spec:
         raise TranscodeError(f"no image spec for platform: {platform!r}")
@@ -155,9 +162,9 @@ def transcode_image(src_path: str | Path, platform: str,
 
     if dest_path is None:
         ext = "jpg" if spec.format == "JPEG" else spec.format.lower()
-        dest = src.with_name(f"{src.stem}.{platform}.{ext}")
+        dest = resolve_media_destination(f"{src.name}.{platform}.{ext}")
     else:
-        dest = Path(dest_path)
+        dest = resolve_media_destination(dest_path)
     dest.write_bytes(out_bytes)
     return dest
 
@@ -172,6 +179,7 @@ def transcode_image_bytes(blob: bytes, platform: str) -> bytes:
 
     try:
         from PIL import Image, ImageOps
+        Image.MAX_IMAGE_PIXELS = 25_000_000
     except ImportError as e:
         raise TranscodeError("Pillow not installed — `pip install Pillow`") from e
 

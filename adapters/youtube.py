@@ -39,6 +39,7 @@ from typing import Any
 import httpx
 
 from api.schema import CAPTION_LIMITS, ContentUnit
+from media.paths import resolve_media_path
 
 log = logging.getLogger("open-dispatch.youtube")
 
@@ -122,10 +123,10 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
     video_path = fmt.get("video_path")
     if not video_path:
         return False, "", "youtube_short.video_path is required"
-    p = Path(video_path)
-    if not p.exists() or not p.is_file():
+    try:
+        p = resolve_media_path(video_path, strict_root=True)
+    except Exception as e:
         return False, "", f"video_path does not exist: {video_path}"
-
     client_id, client_secret, refresh_token = _creds(account)
     if not (client_id and client_secret and refresh_token):
         return (

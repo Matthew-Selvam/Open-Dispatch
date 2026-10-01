@@ -39,6 +39,18 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-asyncio
 
+      - name: Verify package build and contents
+        run: |
+          python -m pip install build
+          python -m build --wheel
+          python - <<'PY'
+          import glob, zipfile
+          wheel = glob.glob('dist/*.whl')[0]
+          names = set(zipfile.ZipFile(wheel).namelist())
+          for required in ('profiles.py', 'mcp_server.py', 'web/templates/base.html', 'web/static/style.css'):
+              assert required in names, required
+          PY
+
       - name: Run tests
         run: pytest -q --tb=short
 
@@ -71,6 +83,25 @@ jobs:
           test -f dist/nodes/OpenDispatch/OpenDispatch.node.js
           test -f dist/nodes/OpenDispatch/opendispatch.svg
 
+  landing:
+    name: Landing — build and audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: landing/package-lock.json
+      - name: Install
+        working-directory: landing
+        run: npm ci
+      - name: Audit production dependencies
+        working-directory: landing
+        run: npm audit --audit-level=high
+      - name: Build
+        working-directory: landing
+        run: npm run build
   docker:
     name: Docker — image build smoke test
     runs-on: ubuntu-latest

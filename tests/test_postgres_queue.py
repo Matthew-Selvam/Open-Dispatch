@@ -204,7 +204,7 @@ def test_mark_published_updates_post_id_and_clears_error():
     assert "UPDATE open_dispatch_queue" in sql
     assert "post_id" in sql
     assert "last_error" in sql
-    assert "published" in params
+    assert "published" in sql
     assert "post_999" in params
 
 
@@ -222,7 +222,60 @@ def test_mark_failed_increments_attempts():
     sql, params = state["last"].executions[0]  # type: ignore[union-attr]
     # Uses attempts = attempts + 1 (no read-modify-write)
     assert "attempts = attempts + 1" in sql
-    assert params == ("queued", "rate limit", "abc-123")
+    # scheduled_for is rescheduled in the same statement via COALESCE, so the
+    # params are (status, error, retry_at, row_id). With no retry_at, COALESCE
+    # leaves scheduled_for untouched.
+    assert "COALESCE(%s, scheduled_for)" in sql
+    assert params == ("queued", "rate limit", None, "abc-123")
+
+
+def test_mark_failed_applies_retry_at_in_the_same_statement():
+    state = {}
+
+    def factory():
+        c = FakeConn()
+        state["last"] = c
+        return c
+
+    q = PostgresQueue(factory)
+    state["last"].executions.clear()  # type: ignore[union-attr]
+    q.mark_failed("abc-123", "boom", retry_at="2099-01-01T00:00:00+00:00")
+    _sql, params = state["last"].executions[0]  # type: ignore[union-attr]
+    assert params == ("queued", "boom", "2099-01-01T00:00:00+00:00", "abc-123")
+
+
+def test_mark_failed_dead_does_not_reschedule():
+    state = {}
+
+    def factory():
+        c = FakeConn()
+        state["last"] = c
+        return c
+
+    q = PostgresQueue(factory)
+    state["last"].executions.clear()  # type: ignore[union-attr]
+    q.mark_failed("abc-123", "fatal", dead=True, retry_at="2099-01-01T00:00:00+00:00")
+    _sql, params = state["last"].executions[0]  # type: ignore[union-attr]
+    # A dead row must keep its original scheduled_for, so the retry_at is
+    # forced to None even though the caller passed one.
+    assert params == ("dead", "fatal", None, "abc-123")
+
+
+def test_mark_publishing_requires_the_row_to_be_due():
+    state = {}
+
+    def factory():
+        c = FakeConn()
+        state["last"] = c
+        return c
+
+    q = PostgresQueue(factory)
+    state["last"].executions.clear()  # type: ignore[union-attr]
+    q.mark_publishing("abc-123")
+    sql, _params = state["last"].executions[0]  # type: ignore[union-attr]
+    # The due guard prevents a worker with a stale id from claiming a row that
+    # another worker has backed off to a future scheduled_for.
+    assert "scheduled_for <= now()" in sql
 
 
 def test_mark_failed_dead_sets_dead_status():
@@ -238,6 +291,32 @@ def test_mark_failed_dead_sets_dead_status():
     q.mark_failed("abc-123", "permanent", dead=True)
     sql, params = state["last"].executions[0]  # type: ignore[union-attr]
     assert params[0] == "dead"
+
+
+def test_cancel_campaign_generates_guarded_update_returning():
+    state = {}
+
+    def factory():
+        c = FakeConn()
+        c.cursor_result = [
+            # (id, unit, platform, scheduled_for, status, attempts, post_id, last_error, created_at, updated_at)
+            ("11111111-1111-1111-1111-111111111111", {"id": "camp-9"}, "twitter:default",
+             None, "canceled", 0, None, None, None, None),
+        ]
+        state["last"] = c
+        return c
+
+    q = PostgresQueue(factory)
+    state["last"].executions.clear()  # type: ignore[union-attr]
+    rows = q.cancel_campaign("camp-9")
+    sql, params = state["last"].executions[0]  # type: ignore[union-attr]
+    assert "SET status = 'canceled'" in sql
+    assert "(unit->>'id') = %s" in sql
+    assert "status = 'queued'" in sql  # the guard: only still-queued rows
+    assert "RETURNING *" in sql
+    assert params == ("camp-9",)
+    assert rows[0]["status"] == "canceled"
+    assert rows[0]["platform"] == "twitter:default"
 
 
 def test_factory_falls_back_when_database_url_unreachable(monkeypatch):

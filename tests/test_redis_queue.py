@@ -201,6 +201,27 @@ def test_mark_failed_dead_doesnt_requeue():
     assert rid not in r.zsets["dispatch:due"]
 
 
+def test_cancel_campaign_flips_only_queued_and_leaves_zset():
+    r = FakeRedis()
+    q = RedisQueue(r)
+    unit = {"id": "camp-9"}
+    rid_q1 = q.enqueue(unit, "tg:a", _now_iso())
+    rid_q2 = q.enqueue(unit, "tw:b", _now_iso())
+    rid_pub = q.enqueue(unit, "bs:c", _now_iso())
+    q.mark_publishing(rid_pub)
+    q.mark_published(rid_pub, "p-1")
+    # a foreign campaign must survive
+    rid_other = q.enqueue({"id": "camp-10"}, "tg:x", _now_iso())
+
+    canceled = q.cancel_campaign("camp-9")
+    assert {row["id"] for row in canceled} == {rid_q1, rid_q2}
+    assert all(row["status"] == "canceled" for row in canceled)
+    assert q.get(rid_pub)["status"] == "published"
+    assert q.get(rid_other)["status"] == "queued"
+    due = r.zsets["dispatch:due"]
+    assert rid_q1 not in due and rid_q2 not in due and rid_other in due
+
+
 def test_factory_falls_back_to_jsonl_when_no_redis_url(monkeypatch):
     monkeypatch.delenv("REDIS_URL", raising=False)
     from api.queue import JsonlQueue, _reset_singleton_for_tests, get_queue

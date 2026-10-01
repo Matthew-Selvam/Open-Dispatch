@@ -15,6 +15,7 @@ import logging
 import os
 
 from api.schema import ContentUnit
+from media.paths import resolve_media_path, MediaPathError
 
 log = logging.getLogger("open-dispatch.twitter")
 
@@ -60,7 +61,7 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
                 consumer_key, consumer_secret, access_token, access_secret,
             ))
             for path in media_paths[:4]:
-                m = api_v1.media_upload(filename=path)
+                m = api_v1.media_upload(filename=str(resolve_media_path(path, strict_root=True)))
                 media_ids.append(str(m.media_id))
 
         for i, text in enumerate(tweets):

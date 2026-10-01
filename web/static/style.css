@@ -128,6 +128,7 @@ h2 { font-size: 18px; font-weight: 600; }
 .status-published  { color: var(--accent); background: rgba(74,222,128,.10); border-color: rgba(74,222,128,.25); }
 .status-failed     { color: var(--warn);   background: rgba(250,204,21,.12); border-color: rgba(250,204,21,.30); }
 .status-dead       { color: var(--err);    background: rgba(248,113,113,.10); border-color: rgba(248,113,113,.30); }
+.status-canceled   { color: var(--muted);  background: rgba(148,163,184,.10); border-color: rgba(148,163,184,.25); }
 
 /* ─── Buttons ───────────────────────────────────────────────────────────── */
 .btn {

@@ -16,6 +16,7 @@ from pathlib import Path
 import httpx
 
 from api.schema import CAPTION_LIMITS, ContentUnit
+from media.paths import resolve_media_path
 
 log = logging.getLogger("open-dispatch.telegram")
 
@@ -49,9 +50,7 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
     base = f"https://api.telegram.org/bot{token}"
     try:
         if photo:
-            p = Path(photo)
-            if not p.exists():
-                return False, "", f"photo_path does not exist: {photo}"
+            p = resolve_media_path(photo, strict_root=True)
             with p.open("rb") as f:
                 r = httpx.post(
                     f"{base}/sendPhoto",
@@ -69,9 +68,7 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
             return True, msg_id, ""
 
         if video:
-            v = Path(video)
-            if not v.exists():
-                return False, "", f"video_path does not exist: {video}"
+            v = resolve_media_path(video, strict_root=True)
             with v.open("rb") as f:
                 r = httpx.post(
                     f"{base}/sendVideo",

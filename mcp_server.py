@@ -32,15 +32,38 @@ from typing import Any
 
 import httpx
 
+# mcp 2.x renamed FastMCP -> MCPServer; support both so the extra works on
+# either major version (pyproject pins mcp>=1.0, which resolves to 2.x today).
 try:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.fastmcp import FastMCP  # mcp 1.x
 except ImportError:
-    raise SystemExit(
-        "mcp package not installed. Run: pip install mcp\n"
-        "Or: pip install 'open-dispatch[mcp]'"
-    )
+    try:
+        from mcp.server.mcpserver import MCPServer as FastMCP  # mcp 2.x
+    except ImportError:
+        raise SystemExit(
+            "mcp package not installed. Run: pip install mcp\n"
+            "Or: pip install 'open-dispatch[mcp]'"
+        )
 
 BASE_URL = os.getenv("OPEN_DISPATCH_URL", "http://localhost:8000").rstrip("/")
+
+
+def _auth_headers() -> dict[str, str]:
+    """Authorization header for a server running with OPEN_DISPATCH_API_TOKEN.
+
+    Returns {} when the variable is unset or blank, so an unauthenticated
+    server keeps working unchanged.
+    """
+    token = os.environ.get("OPEN_DISPATCH_API_TOKEN", "").strip()
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+def _headers(extra: dict[str, str] | None = None) -> dict[str, str]:
+    merged = {"Accept": "application/json"}
+    merged.update(_auth_headers())
+    if extra:
+        merged.update(extra)
+    return merged
 
 mcp = FastMCP(
     "open-dispatch",
@@ -49,26 +72,38 @@ mcp = FastMCP(
         "Use dispatch() to post content to one or many platforms in one call. "
         "Platforms: twitter, bluesky, instagram, telegram, threads, linkedin, youtube, tiktok, facebook, discord. "
         "Target syntax: 'platform' or 'platform:account'. "
-        "Use get_queue() to monitor post status, retry_row() to retry failures."
+        "Use get_queue() to monitor post status, campaign_status() to inspect all platforms for one dispatch, "
+        "cancel_campaign() to stop queued campaign rows, and retry_row() to retry failures."
     ),
 )
 
 
-def _get(path: str, **params: Any) -> dict:
-    r = httpx.get(f"{BASE_URL}{path}", params=params, headers={"Accept": "application/json"}, timeout=15)
+def _raise_with_hint(r: Any) -> None:
+    """Re-raise 401/403 with the fix, instead of a bare HTTPStatusError."""
+    if r.status_code in (401, 403):
+        raise RuntimeError(
+            f"Open-Dispatch returned {r.status_code}: the server requires authentication. "
+            "Set OPEN_DISPATCH_API_TOKEN in the environment this MCP server runs in "
+            f"to match the server. (server said: {r.text[:200]})"
+        ) from None
     r.raise_for_status()
+
+
+def _get(path: str, **params: Any) -> dict:
+    r = httpx.get(f"{BASE_URL}{path}", params=params, headers=_headers(), timeout=15)
+    _raise_with_hint(r)
     return r.json()
 
 
 def _post(path: str, body: dict | None = None) -> dict:
-    r = httpx.post(f"{BASE_URL}{path}", json=body, headers={"Accept": "application/json"}, timeout=30)
-    r.raise_for_status()
+    r = httpx.post(f"{BASE_URL}{path}", json=body, headers=_headers(), timeout=30)
+    _raise_with_hint(r)
     return r.json()
 
 
 def _delete(path: str) -> dict:
-    r = httpx.delete(f"{BASE_URL}{path}", headers={"Accept": "application/json"}, timeout=15)
-    r.raise_for_status()
+    r = httpx.delete(f"{BASE_URL}{path}", headers=_headers(), timeout=15)
+    _raise_with_hint(r)
     return r.json()
 
 
@@ -132,7 +167,7 @@ def get_queue(status: str = "queued") -> str:
     """List queue rows filtered by status.
 
     Args:
-        status: One of: queued, publishing, published, failed, dead.
+        status: One of: queued, publishing, published, failed, dead, canceled.
                 Use 'all' to see everything.
 
     Returns:
@@ -150,6 +185,24 @@ def get_queue(status: str = "queued") -> str:
     if len(rows) > 20:
         lines.append(f"  … and {len(rows) - 20} more")
     return "\n".join(lines)
+
+
+@mcp.tool()
+def campaign_status(unit_id: str) -> str:
+    """Show all platform rows for a dispatched campaign."""
+    data = _get(f"/campaign/{unit_id}")
+    rows = data.get("rows", [])
+    lines = [f"Campaign {unit_id}: {len(rows)} row(s)"]
+    for row in rows:
+        lines.append(f"  [{row.get('status')}] {row.get('platform')}  id={row.get('id')}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def cancel_campaign(unit_id: str) -> str:
+    """Cancel all queued rows for a dispatched campaign."""
+    data = _post(f"/campaign/{unit_id}/cancel")
+    return f"Campaign {unit_id}: canceled {data.get('canceled', 0)} row(s)."
 
 
 @mcp.tool()

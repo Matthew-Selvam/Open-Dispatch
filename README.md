@@ -232,12 +232,59 @@ TELEGRAM_CHAT_ID=@channel_or_id
 # REDIS_URL=redis://localhost:6379        # Redis backend
 # DATABASE_URL=postgresql://...          # Postgres backend
 
+# ── API access control (optional, but read this) ───────────────────────────
+# When set, EVERY route except /healthz requires `Authorization: Bearer <token>`.
+# When unset, the API is completely open — fine for 127.0.0.1, NOT fine if the
+# container port is published to a public interface. The Docker image binds
+# 0.0.0.0:8000, so set this before exposing the port.
+# OPEN_DISPATCH_API_TOKEN=change-me-to-a-long-random-string
+
 # ── AI caption adapter (optional) ────────────────────────────────────────────
 # OPENROUTER_API_KEY=...
 # OLLAMA_HOST=http://localhost:11434
 ```
 
 Only configure the platforms you actually use — missing vars are silently skipped.
+
+### API access control
+
+`OPEN_DISPATCH_API_TOKEN` is **off by default**. With it unset, anyone who can
+reach the port can dispatch content to your connected accounts, so treat it as
+required for anything beyond a local, firewalled bind.
+
+```bash
+# .env
+OPEN_DISPATCH_API_TOKEN=$(openssl rand -hex 32)
+```
+
+With the token set, every route except `/healthz` (kept open for Docker health
+checks and uptime monitors) requires:
+
+```
+Authorization: Bearer <your token>
+```
+
+Requests without a valid token get `401`.
+
+All three bundled clients send it automatically once the variable is set in
+> their environment:
+>
+> - **CLI** — reads `OPEN_DISPATCH_API_TOKEN`, or pass `--token <value>`
+> - **MCP server** (`mcp_server.py`) — reads `OPEN_DISPATCH_API_TOKEN`
+> - **n8n node** — paste it into the credential's **API Key Header** field
+>
+> A `401` or `403` from any of them names this variable rather than dumping a
+> bare HTTP error.
+
+State-changing requests (`POST`/`PUT`/`PATCH`/`DELETE`) are additionally checked
+against the `Origin` header, and must be sent **without** an `Authorization`
+header from a browser form — i.e. use the dashboard on the same origin.
+
+> **Behind a reverse proxy:** the origin check compares against the request's own
+> base URL. If your proxy rewrites `Host` or `X-Forwarded-*` in a way that
+> doesn't match the browser's `Origin`, legitimate dashboard mutations will
+> return `403`. Either serve on a single origin, or pass the original host
+> through unchanged.
 
 ---
 
@@ -259,7 +306,9 @@ Dark terminal aesthetic. HTMX-driven (no JS build step). 51 KB vendored `htmx.mi
 |---|---|---|
 | GET | `/healthz` | Liveness probe — JSON for monitors, HTML dashboard for browsers |
 | POST | `/dispatch` | Enqueue a ContentUnit for one or many platforms |
-| GET | `/queue?status=…` | List rows (`queued / publishing / published / dead`) |
+| GET | `/queue?status=…` | List rows (`queued / publishing / published / failed / dead / canceled`) |
+| GET | `/campaign/{unit_id}` | Show every platform row for one dispatch |
+| POST | `/campaign/{unit_id}/cancel` | Cancel that campaign's queued rows |
 | GET | `/queue/{id}` | One row — JSON or HTML (content-negotiated) |
 | POST | `/queue/{id}/retry` | Reset an errored / dead row to `queued` |
 | DELETE | `/queue/{id}` | Delete a single queue row permanently |
@@ -315,6 +364,11 @@ dispatch send --platforms telegram --text "scheduled post" \
 # View queue
 dispatch queue --status queued
 dispatch queue --status failed
+
+# View or cancel one dispatch campaign
+# (use --local to bypass HTTP and access the configured local queue)
+dispatch campaign <unit-id> [--local]
+dispatch campaign <unit-id> --cancel [--local]
 
 # Run the worker in-process
 dispatch worker
@@ -399,7 +453,7 @@ The credential just needs your Open-Dispatch base URL (plus an optional bearer i
 
 ## MCP server (Claude Desktop, Cursor, AI agents)
 
-`mcp_server.py` wraps the entire Open-Dispatch API as an MCP server — 7 tools usable from Claude Desktop, Cursor, or any MCP-compatible AI agent via natural language.
+`mcp_server.py` wraps the entire Open-Dispatch API as an MCP server — 10 tools usable from Claude Desktop, Cursor, or any MCP-compatible AI agent via natural language.
 
 ```bash
 pip install "open-dispatch[mcp]"
@@ -516,7 +570,7 @@ Full endpoint reference: [open-dispatch.vercel.app/api-reference](https://open-d
 
 ```bash
 pytest -q
-# 135 tests — schema, queue, API, and adapter coverage — no network, no real credentials
+# 210 tests — schema, queue, API, media, and adapter coverage — no network, no real credentials
 ```
 
 ---
@@ -538,10 +592,11 @@ pytest -q
 - [x] macOS menubar app + DMG
 - [x] **TikTok adapter** (Content Posting API v2 — PULL_FROM_URL)
 - [x] **Facebook adapter** (Meta Graph API v19 — text, photo, video)
-- [x] **MCP server** (`mcp_server.py` — 7 tools, works with Claude Desktop, Cursor, any MCP client)
+- [x] **Bulk CSV import** (`POST /dispatch/bulk` — 1 MiB cap, validated columns)
+- [x] **MCP server** (`mcp_server.py` — 10 tools, works with Claude Desktop, Cursor, any MCP client;
+      compatible with mcp 1.x and 2.x)
 - [ ] Video transcoding (ffmpeg-backed)
 - [ ] Calendar view in dashboard
-- [ ] Bulk CSV import
 - [ ] Analytics (fetch engagement metrics per post)
 - [ ] PyPI publish
 

@@ -45,9 +45,25 @@ const ENDPOINTS = [
     method: "GET",
     path: "/queue",
     purpose: "List queue rows",
-    description: "Filter by status: queued, publishing, published, failed, dead.",
+    description: "Filter by status: queued, publishing, published, failed, dead, canceled.",
     example: `curl "http://localhost:8000/queue?status=published"`,
     response: `[{"id": "abc123", "status": "published", "platform": "twitter", ...}]`,
+  },
+  {
+    method: "GET",
+    path: "/campaign/{unit_id}",
+    purpose: "Show all platform rows for one dispatch",
+    description: "Returns the current status of every queue row belonging to the content unit.",
+    example: `curl -H "Accept: application/json" http://localhost:8000/campaign/abc123`,
+    response: `{"unit_id": "abc123", "count": 2, "rows": [{"status": "queued", ...}]}`,
+  },
+  {
+    method: "POST",
+    path: "/campaign/{unit_id}/cancel",
+    purpose: "Cancel queued campaign rows",
+    description: "Cancels queued rows only; publishing and completed rows are unchanged.",
+    example: `curl -X POST http://localhost:8000/campaign/abc123/cancel`,
+    response: `{"unit_id": "abc123", "canceled": 2, "rows": [...]}`,
   },
   {
     method: "GET",
@@ -154,8 +170,13 @@ export default function ApiReferencePage() {
             <code className="bg-[var(--color-surface)] border border-[var(--color-border)] px-1.5 py-0.5 rounded text-xs">
               http://localhost:8000
             </code>
-            . No auth is required by default — it's designed for trusted self-hosting. Front it with{" "}
-            Cloudflare Access, Tailscale, or basic auth if you expose it to the internet.
+            . No auth is required by default — it's designed for trusted self-hosting. Before
+            exposing the port beyond localhost, set{" "}
+            <code className="text-[10px] bg-[var(--color-bg)] px-1 rounded">OPEN_DISPATCH_API_TOKEN</code>{" "}
+            and send an <code className="text-[10px] bg-[var(--color-bg)] px-1 rounded">Authorization: Bearer &lt;token&gt;</code>{" "}
+            header on every request except{" "}
+            <code className="text-[10px] bg-[var(--color-bg)] px-1 rounded">/healthz</code>. You can also
+            front it with Cloudflare Access, Tailscale, or basic auth.
           </p>
         </div>
 

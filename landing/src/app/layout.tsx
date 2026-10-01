@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Open-Dispatch",
     description: "One API to dispatch your content anywhere.",
-    url: "https://open-dispatch.dev",
+    url: "https://open-dispatch-landing.vercel.app",
     siteName: "Open-Dispatch",
     type: "website",
   },
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
     title: "Open-Dispatch",
     description: "One API to dispatch your content anywhere.",
   },
-  metadataBase: new URL("https://open-dispatch.dev"),
+  metadataBase: new URL("https://open-dispatch-landing.vercel.app"),
 };
 
 export const viewport: Viewport = {

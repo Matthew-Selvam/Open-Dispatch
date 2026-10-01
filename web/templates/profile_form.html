@@ -83,7 +83,7 @@
               type="{{ 'password' if field_name in password_fields else 'text' }}"
               name="{{ platform }}__{{ field_name }}"
               class="input mono"
-              value="{{ saved.get(field_name, '') }}"
+              value=""
               placeholder="{{ env_var }}"
               autocomplete="new-password"
             />
