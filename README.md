@@ -232,12 +232,55 @@ TELEGRAM_CHAT_ID=@channel_or_id
 # REDIS_URL=redis://localhost:6379        # Redis backend
 # DATABASE_URL=postgresql://...          # Postgres backend
 
+# ── API access control (optional, but read this) ───────────────────────────
+# When set, EVERY route except /healthz requires `Authorization: Bearer <token>`.
+# When unset, the API is completely open — fine for 127.0.0.1, NOT fine if the
+# container port is published to a public interface. The Docker image binds
+# 0.0.0.0:8000, so set this before exposing the port.
+# OPEN_DISPATCH_API_TOKEN=change-me-to-a-long-random-string
+
 # ── AI caption adapter (optional) ────────────────────────────────────────────
 # OPENROUTER_API_KEY=...
 # OLLAMA_HOST=http://localhost:11434
 ```
 
 Only configure the platforms you actually use — missing vars are silently skipped.
+
+### API access control
+
+`OPEN_DISPATCH_API_TOKEN` is **off by default**. With it unset, anyone who can
+reach the port can dispatch content to your connected accounts, so treat it as
+required for anything beyond a local, firewalled bind.
+
+```bash
+# .env
+OPEN_DISPATCH_API_TOKEN=$(openssl rand -hex 32)
+```
+
+With the token set, every route except `/healthz` (kept open for Docker health
+checks and uptime monitors) requires:
+
+```
+Authorization: Bearer <your token>
+```
+
+Requests without a valid token get `401`.
+
+> **Client caveat:** the CLI (`cli.py`), the MCP server (`mcp_server.py`), and the
+> n8n node do not send an `Authorization` header yet, so they will get `401`
+> once this variable is set. Until that's wired up, use the token for direct API
+> access and browser/dashboard use, or keep the server on a trusted network
+> without it. Wiring the header through is tracked in the README roadmap.
+
+State-changing requests (`POST`/`PUT`/`PATCH`/`DELETE`) are additionally checked
+against the `Origin` header, and must be sent **without** an `Authorization`
+header from a browser form — i.e. use the dashboard on the same origin.
+
+> **Behind a reverse proxy:** the origin check compares against the request's own
+> base URL. If your proxy rewrites `Host` or `X-Forwarded-*` in a way that
+> doesn't match the browser's `Origin`, legitimate dashboard mutations will
+> return `403`. Either serve on a single origin, or pass the original host
+> through unchanged.
 
 ---
 
@@ -523,7 +566,7 @@ Full endpoint reference: [open-dispatch.vercel.app/api-reference](https://open-d
 
 ```bash
 pytest -q
-# 135 tests — schema, queue, API, and adapter coverage — no network, no real credentials
+# 185 tests — schema, queue, API, media, and adapter coverage — no network, no real credentials
 ```
 
 ---
@@ -547,6 +590,8 @@ pytest -q
 - [x] **Facebook adapter** (Meta Graph API v19 — text, photo, video)
 - [x] **MCP server** (`mcp_server.py` — 7 tools, works with Claude Desktop, Cursor, any MCP client)
 - [ ] Video transcoding (ffmpeg-backed)
+- [ ] Send `Authorization: Bearer` from the CLI, MCP server, and n8n node so
+      they work when `OPEN_DISPATCH_API_TOKEN` is set
 - [ ] Calendar view in dashboard
 - [ ] Bulk CSV import
 - [ ] Analytics (fetch engagement metrics per post)

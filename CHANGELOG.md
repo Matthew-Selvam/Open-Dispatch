@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Optional API access control** — set `OPEN_DISPATCH_API_TOKEN` to require an
+  `Authorization` header carrying a bearer token on every route except `/healthz`,
+  plus an `Origin` check on state-changing requests. Unset by default; see the
+  README before exposing the port.
 - **Campaign status and cancellation** — `GET /campaign/{unit_id}` reports every platform row;
   `POST /campaign/{unit_id}/cancel` cancels queued rows without touching in-flight or completed rows.
   The CLI exposes `dispatch campaign <unit_id> [--cancel]`, and MCP exposes matching tools.
@@ -24,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Per-row delete** and **bulk purge** (clear published / clear dead) in the dashboard.
 
 ### Fixed
+- `POST /dispatch/bulk` returns 400 instead of 500 when a client sends a non-numeric
+  `Content-Length` header.
+- `transcode_image`'s docstring now matches behavior: output is confined to the media root
+  rather than written next to the source file.
+- Removed an inert `is_symlink()` check in `media/paths.py` that could never fire after
+  `.resolve()` dereferenced the link; containment is enforced by the `relative_to(root)` check.
+- `/_retry-all` now uses the guarded `retry()` method instead of reaching into the private
+  `_update()` helper, so it honors the same status preconditions as the single-row endpoint.
 - Queue due-time comparison now parses timezone-aware timestamps as instants instead of comparing
   ISO-8601 strings lexically; malformed schedule values are logged and treated as due.
 - Campaign cancellation is respected by retry endpoints and bulk retry, so canceled rows cannot be revived.
