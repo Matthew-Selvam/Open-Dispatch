@@ -19,6 +19,7 @@ import os
 
 import httpx
 
+from adapters.errors import classify, clip, prefix_error
 from api.schema import ContentUnit
 
 log = logging.getLogger("open-dispatch.discord")
@@ -61,6 +62,6 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
         return True, message_id, ""
 
     except httpx.HTTPStatusError as e:
-        return False, "", f"HTTP {e.response.status_code}: {e.response.text[:300]}"
+        return False, "", prefix_error(classify(e.response.status_code), f"HTTP {e.response.status_code}: {clip(e.response.text)}")
     except Exception as e:  # noqa: BLE001
         return False, "", f"discord error: {e}"

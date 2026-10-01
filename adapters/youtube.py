@@ -35,13 +35,19 @@ import mimetypes
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
+from adapters.errors import PERMANENT, clip, classify, prefix_error
 from api.schema import CAPTION_LIMITS, ContentUnit
-from media.paths import resolve_media_path
+from media.paths import MediaPathError, resolve_media_path
 
 log = logging.getLogger("open-dispatch.youtube")
+
+
+class MetadataError(ValueError):
+    """Invalid youtube_short metadata (e.g. an unknown privacy value)."""
 
 OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token"
 UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos"
@@ -75,7 +81,7 @@ def _refresh_access_token(client: httpx.Client, client_id: str, client_secret: s
     except httpx.HTTPError as e:
         return None, f"token refresh network error: {e}"
     if r.status_code >= 400:
-        return None, f"token refresh HTTP {r.status_code}: {r.text[:200]}"
+        return None, prefix_error(classify(r.status_code), f"token refresh HTTP {r.status_code}: {clip(r.text)}")
     try:
         return r.json().get("access_token"), ""
     except ValueError:
@@ -97,9 +103,15 @@ def _build_metadata(fmt: dict[str, Any]) -> dict[str, Any]:
             description += suffix
 
     tags = fmt.get("tags") or []
-    privacy = (fmt.get("privacy") or "public").lower()
+    privacy = str(fmt.get("privacy") or "public").strip().lower()
     if privacy not in {"public", "unlisted", "private"}:
-        privacy = "public"
+        # Defaulting an unrecognised value to "public" is a visibility
+        # escalation: a typo like "private " would publish the video to the
+        # world. Fail instead. Raising (rather than returning a tuple) because
+        # this helper returns a dict and the error would be swallowed.
+        raise MetadataError(
+            f"invalid privacy {fmt.get('privacy')!r}; expected public, unlisted or private"
+        )
 
     snippet: dict[str, Any] = {
         "title": title,
@@ -125,8 +137,10 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
         return False, "", "youtube_short.video_path is required"
     try:
         p = resolve_media_path(video_path, strict_root=True)
+    except MediaPathError as e:
+        return False, "", prefix_error(PERMANENT, f"video_path rejected: {e}")
     except Exception as e:
-        return False, "", f"video_path does not exist: {video_path}"
+        return False, "", prefix_error(PERMANENT, f"video_path unusable: {clip(e)}")
     client_id, client_secret, refresh_token = _creds(account)
     if not (client_id and client_secret and refresh_token):
         return (
@@ -134,7 +148,10 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
             "YOUTUBE_CLIENT_ID / YOUTUBE_CLIENT_SECRET / YOUTUBE_REFRESH_TOKEN missing"
         )
 
-    metadata = _build_metadata(fmt)
+    try:
+        metadata = _build_metadata(fmt)
+    except MetadataError as e:
+        return False, "", prefix_error(PERMANENT, str(e))
     mime_type = mimetypes.guess_type(str(p))[0] or "video/mp4"
 
     with httpx.Client() as client:
@@ -159,24 +176,41 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
         except httpx.HTTPError as e:
             return False, "", f"initiate upload network error: {e}"
         if r.status_code >= 400:
-            return False, "", f"initiate upload HTTP {r.status_code}: {r.text[:300]}"
+            return False, "", prefix_error(classify(r.status_code), f"initiate upload HTTP {r.status_code}: {clip(r.text)}")
         upload_session_url = r.headers.get("location")
         if not upload_session_url:
             return False, "", "initiate upload: no Location header in response"
+        # The Location header dictates where the whole video file is PUT. It
+        # arrives over TLS from Google, so this is not directly
+        # attacker-controlled, but an intercepting TLS proxy, a pinned/custom
+        # CA, or DNS compromise would send the user's video anywhere — and the
+        # adapter would still report success. Pin scheme and host.
+        parsed = urlparse(upload_session_url)
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme != "https" or not (host == "googleapis.com" or host.endswith(".googleapis.com")):
+            return False, "", prefix_error(
+                PERMANENT,
+                f"refusing upload to untrusted Location host "
+                f"(scheme={parsed.scheme!r} host={host!r}); expected *.googleapis.com over https",
+            )
 
         # Step 2 — PUT the file bytes to the session URL
         try:
             with p.open("rb") as f:
+                # Stream the file object rather than f.read(): Shorts can be
+                # hundreds of MB and a full read buffers all of it in RAM.
+                # Bound every phase — timeout=None hangs the single-threaded
+                # worker forever on a stalled peer.
                 up = client.put(
                     upload_session_url,
-                    content=f.read(),
+                    content=f,
                     headers={"Content-Type": mime_type},
-                    timeout=None,  # videos can be slow; no read timeout
+                    timeout=httpx.Timeout(connect=10.0, read=120.0, write=300.0, pool=10.0),
                 )
         except httpx.HTTPError as e:
             return False, "", f"upload network error: {e}"
         if up.status_code >= 400:
-            return False, "", f"upload HTTP {up.status_code}: {up.text[:300]}"
+            return False, "", prefix_error(classify(up.status_code), f"upload HTTP {up.status_code}: {clip(up.text)}")
 
         try:
             body = up.json()

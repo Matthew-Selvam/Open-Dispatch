@@ -12,9 +12,11 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 import httpx
 
+from adapters.errors import AUTH, PERMANENT, clip, classify, prefix_error
 from api.schema import CAPTION_LIMITS, ContentUnit
 from media.paths import resolve_media_path
 
@@ -25,6 +27,25 @@ def _chunk(text: str, limit: int) -> list[str]:
     if len(text) <= limit:
         return [text]
     return [text[i:i + limit] for i in range(0, len(text), limit)]
+
+
+def _result_message_id(r: Any) -> tuple[str, str]:
+    """Return (message_id, error). Telegram reports failure as HTTP 200 with
+    `"ok": false` in the body, so raise_for_status() alone reports success for
+    a message that was never sent. Every response must go through this."""
+    try:
+        body = r.json()
+    except ValueError:
+        return "", f"telegram: non-JSON response: {clip(r.text)}"
+    if not body.get("ok"):
+        code = body.get("error_code", "?")
+        desc = body.get("description", "unknown error")
+        cls = AUTH if code in (401, 403) else PERMANENT if code in (400, 404) else "retryable"
+        return "", prefix_error(cls, f"telegram {code}: {desc}")
+    try:
+        return str(body["result"]["message_id"]), ""
+    except (KeyError, TypeError):
+        return "", prefix_error("published", f"telegram: sent but no message_id: {clip(r.text)}")
 
 
 def _chat_id(account: str | None) -> str:
@@ -59,12 +80,18 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
                     timeout=60,
                 )
             r.raise_for_status()
-            msg_id = str(r.json().get("result", {}).get("message_id", ""))
+            msg_id, perr = _result_message_id(r)
+            if perr:
+                return False, "", perr
             if len(text) > 1024:
                 for chunk in _chunk(text[1024:], CAPTION_LIMITS["telegram"]):
-                    httpx.post(f"{base}/sendMessage",
-                               data={"chat_id": chat_id, "text": chunk, "parse_mode": parse_mode},
-                               timeout=30).raise_for_status()
+                    cr = httpx.post(f"{base}/sendMessage",
+                                    data={"chat_id": chat_id, "text": chunk, "parse_mode": parse_mode},
+                                    timeout=30)
+                    cr.raise_for_status()
+                    _cid, cerr = _result_message_id(cr)
+                    if cerr:
+                        return False, "", cerr
             return True, msg_id, ""
 
         if video:
@@ -77,12 +104,18 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
                     timeout=120,
                 )
             r.raise_for_status()
-            msg_id = str(r.json().get("result", {}).get("message_id", ""))
+            msg_id, perr = _result_message_id(r)
+            if perr:
+                return False, "", perr
             if len(text) > 1024:
                 for chunk in _chunk(text[1024:], CAPTION_LIMITS["telegram"]):
-                    httpx.post(f"{base}/sendMessage",
-                               data={"chat_id": chat_id, "text": chunk, "parse_mode": parse_mode},
-                               timeout=30).raise_for_status()
+                    cr = httpx.post(f"{base}/sendMessage",
+                                    data={"chat_id": chat_id, "text": chunk, "parse_mode": parse_mode},
+                                    timeout=30)
+                    cr.raise_for_status()
+                    _cid, cerr = _result_message_id(cr)
+                    if cerr:
+                        return False, "", cerr
             return True, msg_id, ""
 
         if not text:
@@ -95,11 +128,21 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
                 timeout=30,
             )
             r.raise_for_status()
+            chunk_id, perr = _result_message_id(r)
+            if perr:
+                return False, "", perr
             if first_id is None:
-                first_id = str(r.json().get("result", {}).get("message_id", ""))
-        return True, first_id or "", ""
+                first_id = chunk_id
+        if not first_id:
+            return False, "", prefix_error("published", "telegram: sent but no message_id")
+        return True, first_id, ""
 
     except httpx.HTTPStatusError as e:
-        return False, "", f"HTTP {e.response.status_code}: {e.response.text[:300]}"
+        # Build the message from the response, never from str(e): the exception
+        # interpolates the full URL and the bot token lives in its path.
+        return False, "", prefix_error(
+            classify(e.response.status_code),
+            f"HTTP {e.response.status_code}: {clip(e.response.text)}",
+        )
     except Exception as e:  # noqa: BLE001
-        return False, "", f"telegram error: {e}"
+        return False, "", prefix_error("retryable", f"telegram error: {clip(e)}")

@@ -22,6 +22,7 @@ import time
 
 import httpx
 
+from adapters.errors import PUBLISHED, classify, clip, prefix_error
 from api.schema import ContentUnit
 
 log = logging.getLogger("open-dispatch.tiktok")
@@ -98,18 +99,45 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
             )
             status_r.raise_for_status()
             status_data = status_r.json()
-            status = status_data.get("data", {}).get("status", "")
+            # A status response can carry an error envelope with HTTP 200.
+            err_env = status_data.get("error")
+            if err_env:
+                code = err_env.get("code", "?")
+                msg = err_env.get("message", "unknown")
+                cls = classify(429 if str(code) == "22000" else None)
+                return False, "", prefix_error(
+                    cls, f"TikTok status error {code}: {msg} (publish_id={publish_id})")
+            status = (status_data.get("data") or {}).get("status", "")
             if status == "PUBLISH_COMPLETE":
-                post_id = str(status_data.get("data", {}).get("publicaly_available_post_id", [publish_id])[0])
-                return True, post_id, ""
+                # The field is a list in the API, but be defensive: a bare
+                # string would index to its first CHARACTER and be returned as
+                # the post id, and an empty list raised IndexError.
+                ids = (status_data.get("data") or {}).get("publicaly_available_post_id") or []
+                if isinstance(ids, str):
+                    ids = [ids]
+                if not ids:
+                    return False, "", prefix_error(
+                        PUBLISHED,
+                        f"TikTok reports complete but no post id (publish_id={publish_id})")
+                return True, str(ids[0]), ""
             if status in ("FAILED", "PUBLISH_FAILED"):
-                reason = status_data.get("data", {}).get("fail_reason", "unknown")
-                return False, "", f"TikTok publish failed: {reason}"
+                reason = (status_data.get("data") or {}).get("fail_reason", "unknown")
+                return False, "", prefix_error(
+                    "retryable", f"TikTok publish failed: {reason} (publish_id={publish_id})")
 
-        # Timed out polling — post is likely still processing
-        return True, publish_id, ""
+        # Polls exhausted. The old code returned ok=True with publish_id, so a
+        # video that never published was marked published and a published
+        # webhook fired for it. publish_id is NOT a post id. Report it as
+        # published-but-unconfirmed so the worker never retries into a double.
+        return False, "", prefix_error(
+            PUBLISHED,
+            f"TikTok still processing after 12 polls; publish_id={publish_id} (not a post id)",
+        )
 
     except httpx.HTTPStatusError as e:
-        return False, "", f"HTTP {e.response.status_code}: {e.response.text[:300]}"
+        return False, "", prefix_error(
+            classify(e.response.status_code),
+            f"HTTP {e.response.status_code}: {clip(e.response.text)}",
+        )
     except Exception as e:  # noqa: BLE001
-        return False, "", f"tiktok error: {e}"
+        return False, "", prefix_error("retryable", f"tiktok error: {clip(e)}")
