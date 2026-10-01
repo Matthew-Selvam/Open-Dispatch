@@ -25,6 +25,7 @@ from api.schema import ContentUnit
 
 log = logging.getLogger("open-dispatch.instagram")
 GRAPH = "https://graph.facebook.com/v21.0"
+MAX_CAROUSEL_ITEMS = 10
 
 
 def _creds(account: str | None) -> tuple[str, str]:
@@ -64,8 +65,16 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
 
     try:
         if carousel:
+            # Instagram allows at most 10 children. Slicing silently published
+            # the post with the wrong images and no error, so reject it instead.
+            if len(carousel) > MAX_CAROUSEL_ITEMS:
+                return False, "", prefix_error(
+                    PERMANENT,
+                    f"carousel_image_urls supports at most {MAX_CAROUSEL_ITEMS} items "
+                    f"(got {len(carousel)})",
+                )
             children: list[str] = []
-            for url in carousel[:10]:
+            for url in carousel:
                 r = httpx.post(f"{GRAPH}/{ig_user_id}/media",
                                data={"image_url": url, "is_carousel_item": "true",
                                      "access_token": token},
