@@ -36,6 +36,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Per-row delete** and **bulk purge** (clear published / clear dead) in the dashboard.
 
 ### Fixed
+- **A typo in `THREADS_SETTLE_SECONDS` silently lost the post.** `int("abc")` raised out of
+  `publish()`, and because `list_due()` only returns `queued` rows with no reaper for stuck claims,
+  the row stayed in `publishing` forever with `attempts=0` and no recorded error. The value is now
+  parsed defensively and clamped to 120s, so an unbounded value cannot stall the single-threaded
+  worker either. Reproduced before the fix: row stuck in `publishing`, invisible to `list_due()`.
+- **Over-length content is now rejected instead of silently truncated.** `text[:280]` on Twitter and
+  `[:300]` on Bluesky posted a broken mid-sentence fragment with no warning; `media_paths[:4]`,
+  `images[:4]` and `carousel[:10]` silently dropped the extras and published the post with the wrong
+  images. All now return a `permanent` error naming the limit. Length checks run before any SDK
+  client is constructed, so a bad request never spins up client objects.
+- **Threads catches `httpx.InvalidURL`, which is not an `httpx.HTTPError` subclass**, so a malformed
+  user id escaped the adapter's handlers and stranded the row the same way.
 - **Adapters no longer report success when a post did not publish.** Verified reproductions of the
   pre-fix behavior:
   - Telegram reports failure as HTTP 200 with `"ok": false`; the adapter never checked it, so a
