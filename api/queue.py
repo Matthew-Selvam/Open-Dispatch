@@ -366,7 +366,7 @@ class RedisQueue:
             row = self._read(row_id)
             if not row or row.get("status") != "queued":
                 pipe.unwatch()
-                return
+                return False
             row["status"] = "publishing"
             row["updated_at"] = _now()
             pipe.multi()

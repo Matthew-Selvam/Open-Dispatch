@@ -142,7 +142,12 @@ def transcode_image(src_path: str | Path, platform: str,
                     dest_path: str | Path | None = None) -> Path:
     """Read an image from disk, transcode for `platform`, write back to disk.
 
-    If `dest_path` is None, writes to `<src>.<platform>.<ext>` next to the source.
+    Both the source read and the write are confined to the media root
+    (`media.paths.resolve_media_path` / `resolve_media_destination`), so
+    output lands under that root — normally `<media_root>/<src name>.<platform>.<ext>`
+    — not beside the source file. `dest_path` is therefore interpreted
+    relative to the media root and may not escape it.
+
     Returns the destination Path.
     """
     try:

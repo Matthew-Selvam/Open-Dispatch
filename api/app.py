@@ -385,8 +385,8 @@ async def retry_all(request: Request) -> Any:
     requeued = 0
     for row in q.list_all():
         if row.get("last_error") and row.get("status") not in {"published", "canceled"}:
-            q._update(row["id"], {"status": "queued", "last_error": None})  # noqa: SLF001
-            requeued += 1
+            if q.retry(row["id"]):
+                requeued += 1
     if _wants_html(request):
         # Browser form submit: bounce back to the refreshed health dashboard.
         return RedirectResponse(url="/healthz", status_code=303)
@@ -881,8 +881,13 @@ async def dispatch_bulk(request: Request) -> JSONResponse:
     content_type = request.headers.get("content-type", "")
     max_bytes = 1_000_000
     content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > max_bytes:
-        raise HTTPException(status_code=413, detail="CSV exceeds 1 MiB limit")
+    if content_length:
+        try:
+            declared_bytes = int(content_length)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="invalid Content-Length header") from exc
+        if declared_bytes > max_bytes:
+            raise HTTPException(status_code=413, detail="CSV exceeds 1 MiB limit")
     if "multipart" in content_type:
         form = await request.form()
         upload = form.get("file")
