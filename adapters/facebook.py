@@ -18,6 +18,7 @@ import os
 
 import httpx
 
+from adapters.errors import classify, clip, prefix_error
 from api.schema import ContentUnit
 
 log = logging.getLogger("open-dispatch.facebook")
@@ -87,7 +88,7 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
         return True, post_id, ""
 
     except httpx.HTTPStatusError as e:
-        body_text = e.response.text[:300]
+        body_text = clip(e.response.text)
         return False, "", f"HTTP {e.response.status_code}: {body_text}"
     except Exception as e:  # noqa: BLE001
         return False, "", f"facebook error: {e}"

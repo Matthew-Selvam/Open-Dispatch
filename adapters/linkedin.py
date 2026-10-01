@@ -19,6 +19,7 @@ import os
 
 import httpx
 
+from adapters.errors import PUBLISHED, classify, clip, prefix_error
 from api.schema import ContentUnit
 
 log = logging.getLogger("open-dispatch.linkedin")
@@ -69,8 +70,17 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
                        json=payload,
                        timeout=30)
         if r.status_code >= 400:
-            return False, "", f"linkedin: {r.status_code} {r.text[:400]}"
-        urn = r.headers.get("x-restli-id") or r.json().get("id", "")
+            return False, "", prefix_error(
+                classify(r.status_code), f"linkedin: {r.status_code} {clip(r.text)}")
+        # lifecycleState is PUBLISHED, so a 2xx means the post is live. If the
+        # id is unreadable we must NOT return ok=False: the worker would retry
+        # and publish the same post again on every attempt.
+        urn = r.headers.get("x-restli-id")
+        if not urn:
+            return False, "", prefix_error(
+                PUBLISHED,
+                f"linkedin: published but x-restli-id header missing; body={clip(r.text)}",
+            )
         return True, str(urn), ""
     except Exception as e:  # noqa: BLE001
-        return False, "", f"linkedin error: {e}"
+        return False, "", prefix_error("retryable", f"linkedin error: {clip(e)}")

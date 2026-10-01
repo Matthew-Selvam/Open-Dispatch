@@ -27,6 +27,7 @@ import time
 
 import httpx
 
+from adapters.errors import classify, clip, prefix_error
 from api.schema import ContentUnit
 
 log = logging.getLogger("open-dispatch.threads")
@@ -75,7 +76,7 @@ def _create_container(
     except httpx.HTTPError as e:
         return None, f"network error creating container: {e}"
     if r.status_code >= 400:
-        return None, f"create container HTTP {r.status_code}: {r.text[:200]}"
+        return None, prefix_error(classify(r.status_code), f"create container HTTP {r.status_code}: {clip(r.text)}")
     try:
         cid = r.json().get("id")
     except ValueError:
@@ -101,7 +102,7 @@ def _publish_container(
     except httpx.HTTPError as e:
         return None, f"network error publishing: {e}"
     if r.status_code >= 400:
-        return None, f"publish HTTP {r.status_code}: {r.text[:200]}"
+        return None, prefix_error(classify(r.status_code), f"publish HTTP {r.status_code}: {clip(r.text)}")
     try:
         post_id = r.json().get("id")
     except ValueError:
