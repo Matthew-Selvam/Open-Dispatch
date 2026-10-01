@@ -36,6 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Per-row delete** and **bulk purge** (clear published / clear dead) in the dashboard.
 
 ### Fixed
+- **Partial publishes are no longer retried into duplicates.** A Twitter thread where tweet 3 of 5
+  fails, a Bluesky reply chain that breaks midway, or a long Telegram message split into chunks where
+  chunk 2 fails: the earlier items are already live, but the adapter returned a plain retryable
+  failure, so the worker re-posted them on every attempt. These now report `published` with the
+  count of what did publish and the ids involved, so the row is marked published instead of
+  duplicated. A failure on the *first* item is still `retryable`, since nothing went out.
+  Telegram covers both mid-sequence failure shapes (HTTP 5xx via `raise_for_status()` and HTTP 200
+  with `ok: false`).
 - **`CREDENTIALS_GUIDE.html` now exists.** The README and the landing page both pointed at it as
   the answer to "where do I get API keys", but the file was never committed — a 404 on the main
   conversion path, with no equivalent elsewhere in the repo. Built it for all 10 platforms,

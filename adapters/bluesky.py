@@ -16,7 +16,7 @@ import logging
 import os
 from pathlib import Path
 
-from adapters.errors import PERMANENT, clip, prefix_error
+from adapters.errors import PERMANENT, PUBLISHED, clip, prefix_error
 from api.schema import ContentUnit
 from media.paths import resolve_media_path
 
@@ -48,10 +48,12 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
         client.login(handle, password)
 
         thread = fmt.get("thread") or []
+        posted = 0
         if thread:
             parent = None
             root = None
             first_uri = ""
+            posted = 0
             for piece in thread:
                 if len(piece) > POST_LIMIT:
                     return False, "", prefix_error(
@@ -60,6 +62,7 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
                     )
                 ref = client.send_post(text=piece,
                                        reply_to=parent)
+                posted += 1
                 if root is None:
                     root = ref
                     first_uri = ref.uri
@@ -94,4 +97,12 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
             ref = client.send_post(text=text)
         return True, ref.uri, ""
     except Exception as e:  # noqa: BLE001
+        # Earlier posts in a reply chain are already live; retrying the whole
+        # chain would duplicate them.
+        if posted:
+            return False, "", prefix_error(
+                PUBLISHED,
+                f"bluesky: {posted}/{len(thread)} posts published before failing, "
+                f"NOT retried to avoid duplicates: {clip(e)}",
+            )
         return False, "", prefix_error("retryable", f"bluesky error: {clip(e)}")

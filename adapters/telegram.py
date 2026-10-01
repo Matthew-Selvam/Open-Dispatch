@@ -16,7 +16,7 @@ from typing import Any
 
 import httpx
 
-from adapters.errors import AUTH, PERMANENT, clip, classify, prefix_error
+from adapters.errors import AUTH, PERMANENT, PUBLISHED, clip, classify, prefix_error
 from api.schema import CAPTION_LIMITS, ContentUnit
 from media.paths import resolve_media_path
 
@@ -91,7 +91,13 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
                     cr.raise_for_status()
                     _cid, cerr = _result_message_id(cr)
                     if cerr:
-                        return False, "", cerr
+                        # The media (and possibly earlier chunks) already went
+                        # out. Retrying would duplicate them.
+                        return False, "", prefix_error(
+                            PUBLISHED,
+                            f"telegram: media published but caption chunk failed, "
+                            f"NOT retried to avoid duplicates: {cerr}",
+                        )
             return True, msg_id, ""
 
         if video:
@@ -115,22 +121,53 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
                     cr.raise_for_status()
                     _cid, cerr = _result_message_id(cr)
                     if cerr:
-                        return False, "", cerr
+                        # The media (and possibly earlier chunks) already went
+                        # out. Retrying would duplicate them.
+                        return False, "", prefix_error(
+                            PUBLISHED,
+                            f"telegram: media published but caption chunk failed, "
+                            f"NOT retried to avoid duplicates: {cerr}",
+                        )
             return True, msg_id, ""
 
         if not text:
             return False, "", "text empty"
         first_id = None
-        for chunk in _chunk(text, CAPTION_LIMITS["telegram"]):
+        sent_chunks = 0
+        chunks = _chunk(text, CAPTION_LIMITS["telegram"])
+        total_chunks = len(chunks)
+        for chunk in chunks:
             r = httpx.post(
                 f"{base}/sendMessage",
                 data={"chat_id": chat_id, "text": chunk, "parse_mode": parse_mode},
                 timeout=30,
             )
-            r.raise_for_status()
+            try:
+                r.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                # An HTTP failure mid-sequence means earlier chunks already
+                # went out; never let this be retried into duplicates.
+                detail = prefix_error(classify(e.response.status_code),
+                                      f"HTTP {e.response.status_code}: {clip(e.response.text)}")
+                if sent_chunks:
+                    return False, "", prefix_error(
+                        PUBLISHED,
+                        f"telegram: {sent_chunks}/{total_chunks} chunks sent, "
+                        f"NOT retried to avoid duplicates: {detail}",
+                    )
+                return False, "", detail
             chunk_id, perr = _result_message_id(r)
             if perr:
+                if sent_chunks:
+                    # Earlier chunks are already in the chat; a retry would
+                    # re-send them.
+                    return False, "", prefix_error(
+                        PUBLISHED,
+                        f"telegram: {sent_chunks}/{total_chunks} chunks sent, "
+                        f"NOT retried to avoid duplicates: {perr}",
+                    )
                 return False, "", perr
+            sent_chunks += 1
             if first_id is None:
                 first_id = chunk_id
         if not first_id:
