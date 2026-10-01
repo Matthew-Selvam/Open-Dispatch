@@ -20,7 +20,7 @@ const DOCKER_DOCS = `${GITHUB}#--docker-compose-zero-python-required`;
    ADAPTERS in adapters/__init__.py, PLATFORM_IMAGE_SPECS in media/,
    backend classes in api/queue.py, pytest suite. Do not edit by hand. */
 const ADAPTER_COUNT = 10;
-const TEST_COUNT = 210;
+const TEST_COUNT = 307;
 
 /* Real brand marks in /public/logos, fetched rather than typed. */
 const PLATFORMS = [
