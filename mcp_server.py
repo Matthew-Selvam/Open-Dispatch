@@ -32,15 +32,38 @@ from typing import Any
 
 import httpx
 
+# mcp 2.x renamed FastMCP -> MCPServer; support both so the extra works on
+# either major version (pyproject pins mcp>=1.0, which resolves to 2.x today).
 try:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.fastmcp import FastMCP  # mcp 1.x
 except ImportError:
-    raise SystemExit(
-        "mcp package not installed. Run: pip install mcp\n"
-        "Or: pip install 'open-dispatch[mcp]'"
-    )
+    try:
+        from mcp.server.mcpserver import MCPServer as FastMCP  # mcp 2.x
+    except ImportError:
+        raise SystemExit(
+            "mcp package not installed. Run: pip install mcp\n"
+            "Or: pip install 'open-dispatch[mcp]'"
+        )
 
 BASE_URL = os.getenv("OPEN_DISPATCH_URL", "http://localhost:8000").rstrip("/")
+
+
+def _auth_headers() -> dict[str, str]:
+    """Authorization header for a server running with OPEN_DISPATCH_API_TOKEN.
+
+    Returns {} when the variable is unset or blank, so an unauthenticated
+    server keeps working unchanged.
+    """
+    token = os.environ.get("OPEN_DISPATCH_API_TOKEN", "").strip()
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+def _headers(extra: dict[str, str] | None = None) -> dict[str, str]:
+    merged = {"Accept": "application/json"}
+    merged.update(_auth_headers())
+    if extra:
+        merged.update(extra)
+    return merged
 
 mcp = FastMCP(
     "open-dispatch",
@@ -55,21 +78,32 @@ mcp = FastMCP(
 )
 
 
-def _get(path: str, **params: Any) -> dict:
-    r = httpx.get(f"{BASE_URL}{path}", params=params, headers={"Accept": "application/json"}, timeout=15)
+def _raise_with_hint(r: Any) -> None:
+    """Re-raise 401/403 with the fix, instead of a bare HTTPStatusError."""
+    if r.status_code in (401, 403):
+        raise RuntimeError(
+            f"Open-Dispatch returned {r.status_code}: the server requires authentication. "
+            "Set OPEN_DISPATCH_API_TOKEN in the environment this MCP server runs in "
+            f"to match the server. (server said: {r.text[:200]})"
+        ) from None
     r.raise_for_status()
+
+
+def _get(path: str, **params: Any) -> dict:
+    r = httpx.get(f"{BASE_URL}{path}", params=params, headers=_headers(), timeout=15)
+    _raise_with_hint(r)
     return r.json()
 
 
 def _post(path: str, body: dict | None = None) -> dict:
-    r = httpx.post(f"{BASE_URL}{path}", json=body, headers={"Accept": "application/json"}, timeout=30)
-    r.raise_for_status()
+    r = httpx.post(f"{BASE_URL}{path}", json=body, headers=_headers(), timeout=30)
+    _raise_with_hint(r)
     return r.json()
 
 
 def _delete(path: str) -> dict:
-    r = httpx.delete(f"{BASE_URL}{path}", headers={"Accept": "application/json"}, timeout=15)
-    r.raise_for_status()
+    r = httpx.delete(f"{BASE_URL}{path}", headers=_headers(), timeout=15)
+    _raise_with_hint(r)
     return r.json()
 
 

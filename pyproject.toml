@@ -35,7 +35,7 @@ Repository = "https://github.com/Matthew-Selvam/Open-Dispatch"
 test = ["pytest>=8", "pytest-asyncio>=0.23"]
 redis = ["redis>=5.0"]
 postgres = ["psycopg2-binary>=2.9"]
-mcp = ["mcp>=1.0"]
+mcp = ["mcp>=1.0"]  # 1.x FastMCP and 2.x MCPServer both supported
 
 [project.scripts]
 dispatch = "cli:main"

@@ -27,8 +27,25 @@ from datetime import datetime, timezone
 DEFAULT_URL = "http://127.0.0.1:8000"
 
 
-def _post(url: str, body: dict) -> dict:
-    r = httpx.post(url, json=body, timeout=30)
+def _auth_headers(token: str | None = None) -> dict[str, str]:
+    """Authorization header for a server running with OPEN_DISPATCH_API_TOKEN.
+
+    Returns {} when no token is configured, so an unauthenticated server is
+    left alone. A blank/whitespace token is treated as absent rather than
+    sending an empty credential.
+    """
+    value = (token if token is not None else os.environ.get("OPEN_DISPATCH_API_TOKEN", "")).strip()
+    return {"Authorization": f"Bearer {value}"} if value else {}
+
+
+def _post(url: str, body: dict, token: str | None = None) -> dict:
+    r = httpx.post(url, json=body, headers=_auth_headers(token), timeout=30)
+    if r.status_code in (401, 403):
+        raise SystemExit(
+            f"HTTP {r.status_code}: the server requires authentication. Set\n"
+            "  OPEN_DISPATCH_API_TOKEN in your environment, or pass --token.\n"
+            f"  (server said: {r.text[:200]})"
+        )
     if r.status_code >= 400:
         raise SystemExit(f"HTTP {r.status_code}: {r.text}")
     return r.json()
@@ -84,7 +101,7 @@ def cmd_send(args: argparse.Namespace) -> int:
             print(f"✓ enqueued {rid} target={target} sched={sf}")
         return 0
 
-    resp = _post(f"{args.url}/dispatch", unit.to_dict())
+    resp = _post(f"{args.url}/dispatch", unit.to_dict(), args.token)
     print(json.dumps(resp, indent=2))
     return 0
 
@@ -114,9 +131,16 @@ def cmd_campaign(args: argparse.Namespace) -> int:
         return 0
 
     if args.cancel:
-        resp = _post(f"{args.url}/campaign/{args.unit_id}/cancel", {})
+        resp = _post(f"{args.url}/campaign/{args.unit_id}/cancel", {}, args.token)
     else:
-        r = httpx.get(f"{args.url}/campaign/{args.unit_id}", timeout=30)
+        r = httpx.get(f"{args.url}/campaign/{args.unit_id}",
+                      headers=_auth_headers(args.token), timeout=30)
+        if r.status_code in (401, 403):
+            raise SystemExit(
+                f"HTTP {r.status_code}: the server requires authentication. Set\n"
+                "  OPEN_DISPATCH_API_TOKEN in your environment, or pass --token.\n"
+                f"  (server said: {r.text[:200]})"
+            )
         if r.status_code >= 400:
             raise SystemExit(f"HTTP {r.status_code}: {r.text}")
         resp = r.json()
@@ -147,6 +171,8 @@ def cmd_quick_test(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="dispatch", description="Open-Dispatch CLI")
     p.add_argument("--url", default=DEFAULT_URL, help="Open-Dispatch API base URL")
+    p.add_argument("--token", default=os.environ.get("OPEN_DISPATCH_API_TOKEN") or None,
+                   help="API token; defaults to $OPEN_DISPATCH_API_TOKEN")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("send", help="Enqueue a post")
