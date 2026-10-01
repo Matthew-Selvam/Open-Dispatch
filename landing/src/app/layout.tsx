@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({
@@ -8,13 +8,21 @@ const inter = Inter({
   variable: "--font-sans",
 });
 
+const mono = JetBrains_Mono({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-mono",
+});
+
+const DESCRIPTION =
+  "Self-hostable content distribution over plain HTTP. Post to X, Bluesky, Instagram, LinkedIn, Telegram, Threads, YouTube Shorts, TikTok, Discord, and Facebook with a single request. MIT licensed.";
+
 export const metadata: Metadata = {
-  title: "Open-Dispatch — One API to dispatch your content anywhere",
-  description:
-    "Self-hostable, API-first content distribution. Post to Twitter/X, Instagram, Bluesky, LinkedIn, Telegram, Threads, and YouTube Shorts with a single HTTP call. MIT licensed.",
+  title: "Open-Dispatch: one HTTP call, ten platforms",
+  description: DESCRIPTION,
   openGraph: {
     title: "Open-Dispatch",
-    description: "One API to dispatch your content anywhere.",
+    description: DESCRIPTION,
     url: "https://open-dispatch-landing.vercel.app",
     siteName: "Open-Dispatch",
     type: "website",
@@ -22,13 +30,13 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "Open-Dispatch",
-    description: "One API to dispatch your content anywhere.",
+    description: DESCRIPTION,
   },
   metadataBase: new URL("https://open-dispatch-landing.vercel.app"),
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0d0a14",
+  themeColor: "#0f1318",
 };
 
 export default function RootLayout({
@@ -37,7 +45,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={`${inter.variable} ${mono.variable}`}>
       <body>{children}</body>
     </html>
   );

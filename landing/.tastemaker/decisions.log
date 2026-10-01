@@ -1,0 +1,8 @@
+# Taste decisions (append-only)
+
+## 2026-10-01 · Open-Dispatch landing rebuild
+- surface: landing/ public marketing page
+- axis: structure
+- choice: macrostructure Product Demo / Workbench (#7) instead of the previous Feature Stack (#1)
+- reason: the product is a CLI and an HTTP API, so the strongest argument is "see it work." The hero is a real request and its real response.
+- outcome: pending-review

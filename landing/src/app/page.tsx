@@ -2,471 +2,336 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowUpRight, Check, ChevronRight, CircleDot, Code2, Layers3, LockKeyhole, Network, Send, Sparkles, Terminal, Zap } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  Layers3,
+  Plug,
+  X as XIcon,
+  Zap,
+} from "lucide-react";
 
 const GITHUB = "https://github.com/Matthew-Selvam/Open-Dispatch";
-const DMG_URL  = "https://github.com/Matthew-Selvam/Open-Dispatch/releases/latest/download/Open-Dispatch-0.4.0.dmg";
-// No demo video recorded yet — link to the Docker install docs rather than
-// shipping a placeholder URL that 404s.
-const DOCKER_VIDEO_URL = "https://github.com/Matthew-Selvam/Open-Dispatch#--docker-compose-zero-python-required";
+const DMG_URL =
+  "https://github.com/Matthew-Selvam/Open-Dispatch/releases/latest/download/Open-Dispatch-0.4.0.dmg";
+const DOCKER_DOCS = `${GITHUB}#--docker-compose-zero-python-required`;
 
+/* Counts below are verified against the repo, not asserted:
+   ADAPTERS in adapters/__init__.py, PLATFORM_IMAGE_SPECS in media/,
+   backend classes in api/queue.py, pytest suite. Do not edit by hand. */
+const ADAPTER_COUNT = 10;
+const TEST_COUNT = 210;
+
+/* Real brand marks in /public/logos, fetched rather than typed. */
 const PLATFORMS = [
-  { name: "Twitter / X",    icon: "𝕏" },
-  { name: "Bluesky",        icon: "🦋" },
-  { name: "Instagram",      icon: "📷" },
-  { name: "Threads",        icon: "🧵" },
-  { name: "LinkedIn",       icon: "💼" },
-  { name: "Telegram",       icon: "✈️" },
-  { name: "YouTube Shorts", icon: "▶️" },
+  { name: "X", slug: "x", target: "twitter" },
+  { name: "Bluesky", slug: "bluesky", target: "bluesky" },
+  { name: "Instagram", slug: "instagram", target: "instagram" },
+  { name: "Threads", slug: "threads", target: "threads" },
+  { name: "LinkedIn", slug: "linkedin", target: "linkedin" },
+  { name: "Telegram", slug: "telegram", target: "telegram" },
+  { name: "YouTube", slug: "youtube", target: "youtube" },
+  { name: "TikTok", slug: "tiktok", target: "tiktok" },
+  { name: "Discord", slug: "discord", target: "discord" },
+  { name: "Facebook", slug: "facebook", target: "facebook" },
+] as const;
+
+const CAPABILITIES = [
+  {
+    icon: Zap,
+    title: "One request, no dashboard",
+    body: "Every action is a plain HTTP call. Drive it from cron, n8n, a CI job, or an agent. The browser UI is optional, not required.",
+    evidence: "POST /dispatch",
+  },
+  {
+    icon: Layers3,
+    title: "Three queue backends",
+    body: "JSONL on disk needs no infrastructure. Redis or Postgres when you outgrow one worker. Selected by environment variable.",
+    evidence: "JSONL | Redis | Postgres",
+  },
+  {
+    icon: Plug,
+    title: "Ten adapters, one contract",
+    body: "Every platform implements the same function signature. The worker owns retry, backoff, and webhooks so an adapter never has to.",
+    evidence: "tuple[bool, str, str]",
+  },
+  {
+    icon: Check,
+    title: "Per-platform media specs",
+    body: "Ten image specs and seven video specs are built in. POST an image, get it back at the exact dimensions the target expects.",
+    evidence: "GET /media/specs",
+  },
 ];
 
-const FEATURES = [
-  { icon: Zap, title: "API-first",         body: "Every action reachable via one HTTP call. Automate from cron, n8n, AI agents, or your own app — no dashboard required." },
-  { icon: Network, title: "Web UI included",   body: "HTMX-powered dashboard: compose, retry, watch the queue live. Same port as the API — zero JS build step." },
-  { icon: Layers3, title: "3 queue backends",  body: "JSONL on disk, Redis, or Postgres. Swap the persistence layer with a single environment variable." },
-  { icon: Sparkles, title: "AI caption adapt",  body: "One source text → per-platform rewrites. Ollama-first, OpenRouter fallback, heuristic safety net." },
-  { icon: CircleDot, title: "Media transcoding", body: "10 platform image specs built in — square, reels, 16:9, portrait. REST endpoint + Python API." },
-  { icon: Code2, title: "n8n node",          body: "Native integration: Dispatch, Adapt, Get Row, Retry, List Queue — all 5 ops, zero JSON wiring." },
-];
-
-// ── hosted-tool comparison ───────────────────────────────────────────────────────
-const COMPARE_POINTS = [
-  { icon: "💸", them: "Per-account fees that stack up fast",        us: "Self-host free — $0 forever" },
-  { icon: "🔒", them: "Your OAuth tokens live on their servers",    us: "Credentials never leave your machine" },
-  { icon: "🚨", them: "Failures vanish silently or stay vague",     us: "Every error is visible and retryable" },
-  { icon: "🧩", them: "Inbox, analytics & X gated behind add-ons",  us: "All platforms included, no tiers" },
-  { icon: "🗑️", them: "Data lingers after you cancel",             us: "Own your queue, own your data" },
-  { icon: "🔓", them: "Vendor lock-in",                            us: "MIT licensed — fork it any time" },
-];
-
-// ── install methods ────────────────────────────────────────────────────────────
-type InstallKey = "brew" | "curl" | "docker" | "pip" | "dmg";
+type InstallKey = "dmg" | "brew" | "curl" | "docker" | "pip";
 
 const INSTALL: Record<InstallKey, {
-  label:   string;
-  icon:    string;
-  time:    string;   // setup time, shown under label
-  needs:   string;   // requirement, shown under label
+  label: string;
+  time: string;
+  needs: string;
   snippet: string;
-  note?:   string;
+  note?: string;
 }> = {
+  dmg: {
+    label: "macOS app",
+    time: "10s",
+    needs: "macOS 13+",
+    snippet: "",
+    note: "SwiftUI menubar app that bundles the Python server, so there is no separate Python install.",
+  },
   brew: {
-    label:   "Homebrew",
-    icon:    "🍺",
-    time:    "~2 min",
-    needs:   "macOS",
+    label: "Homebrew",
+    time: "~2 min",
+    needs: "macOS",
     snippet:
-`# Add the tap (formula lives in the main repo)
+`# Add the tap
 brew tap matthew-selvam/open-dispatch \\
-  https://github.com/Matthew-Selvam/Open-Dispatch
+  ${GITHUB}
 brew install open-dispatch
 
-# Set up credentials
+# Credentials
 $EDITOR ~/.open-dispatch/.env
 
-# Start (foreground)
-open-dispatch
-
-# Or run as a background service — auto-starts on login
-brew services start open-dispatch`,
-    note: "Installs dispatch + open-dispatch + open-dispatch-worker. brew services wires launchd so it starts at login.",
+# Run it
+open-dispatch`,
+    note: "brew services wires launchd so it starts at login.",
   },
-
   curl: {
-    label:   "install.sh",
-    icon:    "⬇️",
-    time:    "~90s",
-    needs:   "macOS & Linux",
+    label: "install.sh",
+    time: "~90s",
+    needs: "macOS & Linux",
     snippet:
 `curl -fsSL \\
   https://raw.githubusercontent.com/Matthew-Selvam/Open-Dispatch/main/install.sh \\
   | bash
 
-# Set up credentials
 $EDITOR ~/.open-dispatch/.env
-
-# Start server
-open-dispatch
-
-# macOS: start at login via launchd
-launchctl load ~/Library/LaunchAgents/dev.open-dispatch.plist
-
-# Linux: start via systemd user session
-systemctl --user enable --now open-dispatch`,
-    note: "Works on macOS (14+) and Linux. Writes a launchd plist or systemd user unit automatically.",
+open-dispatch`,
+    note: "Writes a launchd plist on macOS or a systemd user unit on Linux.",
   },
-
   docker: {
-    label:   "Docker",
-    icon:    "🐳",
-    time:    "~60s",
-    needs:   "Any platform",
+    label: "Docker",
+    time: "~60s",
+    needs: "Any platform",
     snippet:
-`git clone https://github.com/Matthew-Selvam/Open-Dispatch
+`git clone ${GITHUB}
 cd Open-Dispatch
-cp .env.example .env   # fill in your platform creds
+cp .env.example .env      # add your platform credentials
 docker compose up -d
 
-# Check it's live
-curl http://localhost:8000/healthz   # → {"status":"ok"}
-
-# Open the dashboard
-open http://localhost:8000
-
-# Optional: add Redis for multi-worker throughput
-docker compose --profile redis up -d`,
-    note: "Zero Python setup required. Multi-arch image (amd64 + arm64). Bundled Redis profile for scaling.",
+# Confirm it is live
+curl http://localhost:8000/healthz`,
+    note: "No Python setup. Multi-arch image, with an optional Redis profile for multi-worker throughput.",
   },
-
   pip: {
-    label:   "pip",
-    icon:    "🐍",
-    time:    "Instant",
-    needs:   "Python 3.11+",
+    label: "pip",
+    time: "Instant",
+    needs: "Python 3.11+",
     snippet:
-`# Install from GitHub (PyPI publish pending)
-pip install git+https://github.com/Matthew-Selvam/Open-Dispatch.git
+`pip install git+${GITHUB}.git
 
-# Optional extras
-pip install "open-dispatch[redis]"     # Redis queue backend
-pip install "open-dispatch[postgres]"  # Postgres queue backend
+# Extras
+pip install "open-dispatch[redis]"
+pip install "open-dispatch[postgres]"
 
-# Start the server
-uvicorn api.app:app --reload
-
-# Worker (separate terminal)
-python -m scheduler.worker
-
-# CLI
-dispatch send --platforms bluesky --text "hello world"`,
-    note: "Best for Python developers who want to integrate Open-Dispatch into existing code.",
-  },
-
-  dmg: {
-    label:   "macOS App",
-    icon:    "🍎",
-    time:    "10s",
-    needs:   "macOS 13+",
-    snippet: "", // unused — DownloadPane renders instead
-    note:    "SwiftUI menubar app. Bundles the Python server — no separate Python install needed. macOS 13+.",
+uvicorn api.app:app --reload`,
+    note: "Best if you are embedding Open-Dispatch in an existing Python codebase.",
   },
 };
 
-const INSTALL_ORDER: InstallKey[] = ["brew", "curl", "docker", "pip", "dmg"];
+/* Ordered shortest-first. The macOS app genuinely is the fastest path, so it
+   leads rather than sitting at the end as an afterthought. */
+const INSTALL_ORDER: InstallKey[] = ["dmg", "brew", "curl", "docker", "pip"];
+
+const ENDPOINTS = [
+  ["GET", "/healthz", "Liveness probe. JSON for clients, dashboard for browsers."],
+  ["POST", "/dispatch", "Enqueue a ContentUnit for one or many platforms."],
+  ["GET", "/queue", "List rows. Filter by queued, publishing, published, failed, dead, canceled."],
+  ["GET", "/campaign/{unit_id}", "Every platform row for one dispatch."],
+  ["POST", "/campaign/{unit_id}/cancel", "Cancel a campaign's queued rows."],
+  ["GET", "/queue/{id}", "One row, content-negotiated as JSON or HTML."],
+  ["POST", "/queue/{id}/retry", "Re-queue an errored or dead row."],
+  ["DELETE", "/queue/{id}", "Delete a queue row permanently."],
+  ["POST", "/ai/adapt", "Rewrite a caption per platform."],
+  ["POST", "/media/transcode", "Resize an image to a platform spec."],
+  ["GET", "/media/specs", "List the built-in image and video specs."],
+] as const;
 
 const FAQS = [
   {
     q: "Which install method should I use?",
-    a: (
-      <>
-        On macOS the quickest path is the{" "}
-        <a href="#install" className="underline underline-offset-2 hover:text-[var(--color-fg)]">macOS App</a>
-        {" "}— one download, drag to /Applications, done. If you prefer the terminal,{" "}
-        <a href="#install" className="underline underline-offset-2 hover:text-[var(--color-fg)]">Homebrew</a>
-        {" "}gives you <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">brew services</code> for automatic startup at login.
-      </>
-    ),
+    a: "On macOS, the app is the shortest path: one download, drag to Applications, done. If you want a terminal workflow, Homebrew gives you a login service via brew services. On a Linux VPS, Docker avoids the Python setup entirely.",
   },
   {
-    q: "How do I self-host on a Linux server or VPS?",
-    a: (
-      <>
-        Docker is the cleanest option for Linux — zero Python setup, runs as a non-root user, and includes an optional Redis sidecar.{" "}
-        <Link
-          href={DOCKER_VIDEO_URL}
-          target="_blank" rel="noopener noreferrer"
-          className="underline underline-offset-2 hover:text-[var(--color-fg)]"
-        >
-          Watch the Docker setup walkthrough →
-        </Link>
-      </>
-    ),
+    q: "How do I self-host on a VPS?",
+    a: "Docker is the cleanest option. It runs as a non-root user, needs no Python on the host, and ships an optional Redis sidecar. Read the Docker section of the README for the full walkthrough.",
   },
   {
     q: "Is it really free?",
-    a: "Yes — MIT licensed. Your platform credentials never leave your own machine. There's no cloud component, no telemetry, and no account to create.",
+    a: "Yes. It is MIT licensed with no cloud component, no telemetry, and no account to create. Your platform credentials stay in a .env file on your own machine.",
   },
   {
-    q: "How do I access the API?",
-    a: (
-      <>
-        Once Open-Dispatch is running, the API is available at{" "}
-        <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">http://localhost:8000</code>{" "}
-        with no auth required by default. It's built for trusted self-hosting, but if you expose the port beyond localhost, set{" "}
-        <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">OPEN_DISPATCH_API_TOKEN</code>{" "}first — it requires an Authorization header on every route except{" "}
-        <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">/healthz</code>. Hit{" "}
-        <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">GET /healthz</code>{" "}
-        to confirm it's live, then{" "}
-        <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">POST /dispatch</code>{" "}
-        with a JSON body to send content. See the{" "}
-        <a href="/api-reference" className="underline underline-offset-2 hover:text-[var(--color-fg)]">API reference →</a>
-        {" "}for the full endpoint list and request shapes.
-      </>
-    ),
+    q: "How do I reach the API?",
+    a: "It listens on localhost:8000 with no auth by default, which suits trusted self-hosting. If you expose the port beyond localhost, set OPEN_DISPATCH_API_TOKEN first. That requires an Authorization header on every route except /healthz.",
   },
   {
-    q: "Where do I get API keys for each platform?",
-    a: (
-      <>
-        See the{" "}
-        <Link
-          href={`${GITHUB}/blob/main/CREDENTIALS_GUIDE.html`}
-          target="_blank" rel="noopener noreferrer"
-          className="underline underline-offset-2 hover:text-[var(--color-fg)]"
-        >
-          Credentials Guide
-        </Link>
-        {" "}— a step-by-step reference with direct links to Twitter, Instagram, Telegram, Bluesky, LinkedIn, Threads, and YouTube developer consoles. Open it in a browser for copy/paste instructions per platform.
-      </>
-    ),
+    q: "Where do I get platform credentials?",
+    a: "Each platform's developer console issues its own keys, and .env.example in the repo lists every variable Open-Dispatch reads, grouped by platform with the account-scoped naming convention. Copy it to .env and fill in only the platforms you dispatch to. The API does not complain about platforms you leave unset.",
   },
   {
-    q: "Which credential format should I use for multiple accounts?",
-    a: (
-      <>
-        Use <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">PLATFORM_FIELD_ACCOUNT</code>{" "}
-        (uppercase). Example: <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">TWITTER_ACCESS_TOKEN_WORK</code>{" "}
-        and{" "}
-        <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">TWITTER_ACCESS_TOKEN_PERSONAL</code>{" "}
-        let you target <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">twitter:work</code>{" "}
-        or <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">twitter:personal</code>{" "}
-        in your dispatch requests. See the README for per-platform examples.
-      </>
-    ),
-  },
-  {
-    q: "Can I add a new social platform?",
-    a: (
-      <>
-        Yes. The adapter contract is a single Python function — about 80 lines of code. See{" "}
-        <Link
-          href={`${GITHUB}/blob/main/CONTRIBUTING.md`}
-          target="_blank" rel="noopener noreferrer"
-          className="underline underline-offset-2 hover:text-[var(--color-fg)]"
-        >
-          CONTRIBUTING.md
-        </Link>
-        {" "}for a step-by-step guide. The worker handles retry, backoff, and webhooks automatically.
-      </>
-    ),
+    q: "Can I add another platform?",
+    a: "Yes. The adapter contract is a single Python function, roughly 80 lines. Register it in adapters/__init__.py, document its format key in the README, and the worker handles retry, backoff, and webhooks for you.",
   },
 ];
 
 export default function Page() {
-  const [activeInstall, setActiveInstall] = useState<InstallKey>("brew");
+  const [activeInstall, setActiveInstall] = useState<InstallKey>("dmg");
 
   return (
     <>
-      {/* ── NAV ─────────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 border-b border-[var(--color-border)] bg-[var(--color-bg)]/85 backdrop-blur-xl">
-        <div className="mx-auto max-w-6xl px-6 h-14 flex items-center justify-between">
-          <Link href="/" className="font-mono text-sm font-semibold text-[var(--color-fg)] tracking-tight hover:opacity-80 transition-opacity" aria-label="Open-Dispatch home">
-            open<span className="text-[var(--color-accent)]">-dispatch</span>
+      <header className="sticky top-0 z-50 border-b border-[var(--color-border)] bg-[var(--color-bg)]/90 backdrop-blur-md">
+        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
+          <Link
+            href="/"
+            className="font-mono text-sm font-semibold tracking-tight text-[var(--color-fg)]"
+          >
+            open-dispatch
           </Link>
           <nav className="flex items-center gap-5 text-sm text-[var(--color-body)]">
-            <a href="#install"   className="hover:text-[var(--color-fg)] transition-colors hidden sm:block">Install</a>
-            <a href="#features"  className="hover:text-[var(--color-fg)] transition-colors hidden sm:block">Features</a>
-            <a href="#faq"       className="hover:text-[var(--color-fg)] transition-colors hidden sm:block">FAQ</a>
-            <Link href="/api-reference" className="hover:text-[var(--color-fg)] transition-colors hidden sm:block">API</Link>
-            <Link
-              href={GITHUB} target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-fg)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] transition-colors"
+            <a href="#how" className="hidden transition-colors hover:text-[var(--color-fg)] sm:block">
+              How it works
+            </a>
+            <a href="#api" className="hidden transition-colors hover:text-[var(--color-fg)] sm:block">
+              API
+            </a>
+            <a href="#install" className="hidden transition-colors hover:text-[var(--color-fg)] sm:block">
+              Install
+            </a>
+            <a href="#faq" className="hidden transition-colors hover:text-[var(--color-fg)] sm:block">
+              FAQ
+            </a>
+            <a
+              href={GITHUB}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 py-1.5 font-mono text-xs text-[var(--color-fg)] transition-colors hover:border-[var(--color-primary)]"
             >
               <GitHubIcon /> GitHub
-            </Link>
-
+            </a>
           </nav>
         </div>
       </header>
 
       <main>
-        {/* ── HERO ──────────────────────────────────────────────────────── */}
-        <section className="relative overflow-hidden border-b border-[var(--color-border)] bg-[var(--color-bg)]">
-          <GridBg />
-          <div aria-hidden className="pointer-events-none absolute -right-24 top-16 size-72 rounded-full bg-gradient-to-br from-[#d6c5ff] via-[#ffb6d8] to-[#8cecff] opacity-50 blur-3xl" />
-          <div aria-hidden className="pointer-events-none absolute left-[42%] top-10 size-3 rounded-full bg-[#ff5f9e] shadow-[0_0_0_10px_rgba(255,95,158,.12)]" />
-          <div className="relative mx-auto max-w-6xl px-6 py-14 md:py-20 grid md:grid-cols-2 gap-10 md:gap-12 items-center">
+        {/* ── WORKBENCH HERO ──────────────────────────────────────────────
+            The product is a request. So the hero is a request, with its real
+            response underneath. One promise, one visual, two actions. */}
+        <section className="border-b border-[var(--color-border)]">
+          <div className="mx-auto grid max-w-6xl items-center gap-12 px-6 py-24 md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] md:py-28">
             <div>
-              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-xs font-mono text-[var(--color-body)]">
-                <span className="size-1.5 rounded-full bg-green-400 animate-pulse" />
-                v0.4.0 · MIT · 210 tests
-              </div>
-              <h1 className="font-sans text-5xl sm:text-[3.6rem] font-bold leading-[.94] tracking-[-.055em]">
-                One API to <span className="bg-gradient-to-r from-[#7138ff] via-[#d23cff] to-[#ff5f9e] bg-clip-text text-transparent">dispatch</span>
-                <br />your content
-                <br />anywhere.
-              </h1>
-              <p className="mt-5 text-[var(--color-body)] leading-relaxed max-w-lg">
-                Open-source infrastructure for content distribution.
-                Like Stripe for payments — except for posting.
-                One HTTP call, seven platforms, zero vendor lock-in.
+              <p className="font-mono text-xs text-[var(--color-muted)]">
+                MIT licensed · {TEST_COUNT} tests
               </p>
-              <p className="mt-3 text-sm font-medium text-[var(--color-fg)] max-w-lg">
-                No per-account fees. No paywalls. No vendor lock-in.
-              </p>
-              <div className="mt-6 flex flex-wrap gap-3">
-                <a href="#install"
-                  className="signal-gradient inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(113,56,255,.25)] transition-transform hover:-translate-y-0.5">
-                  Install now <ArrowUpRight size={16} />
-                </a>
-                <Link href={GITHUB} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-2.5 text-sm font-semibold text-[var(--color-fg)] shadow-sm hover:border-[var(--color-accent)] transition-colors">
-                  <GitHubIcon /> Star on GitHub
-                </Link>
-              </div>
-              <div className="mt-5 flex flex-wrap gap-2">
-                {PLATFORMS.map(p => (
-                  <span key={p.name} className="flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-xs text-[var(--color-body)]">
-                    {p.icon} {p.name}
-                  </span>
-                ))}
-              </div>
-            </div>
 
-            {/* dispatch snippet */}
-            <div className="float-signal">
-            <CodeCard filename="dispatch.sh">
-              <span className="text-[#79d1ff]">curl</span>
-              {` -X POST http://localhost:8000/dispatch \\
-  -H "Content-Type: application/json" \\
-  -d '`}
-              <span className="text-[#e8c97d]">{`{`}</span>
-              {`\n  `}
-              <span className="text-[#e8c97d]">"targets"</span>
-              {`: [`}
-              <span className="text-[#9de29a]">"twitter"</span>
-              {`, `}
-              <span className="text-[#9de29a]">"bluesky"</span>
-              {`, `}
-              <span className="text-[#9de29a]">"telegram"</span>
-              {`],\n  `}
-              <span className="text-[#e8c97d]">"formats"</span>
-              {`: {\n    `}
-              <span className="text-[#e8c97d]">"twitter_thread"</span>
-              {`: {`}
-              <span className="text-[#e8c97d]">"tweets"</span>
-              {`:[`}
-              <span className="text-[#9de29a]">"shipped v0.4"</span>
-              {`]},\n    `}
-              <span className="text-[#e8c97d]">"bluesky_post"</span>
-              {`:   {`}
-              <span className="text-[#e8c97d]">"text"</span>
-              {`:`}
-              <span className="text-[#9de29a]">"shipped v0.4"</span>
-              {`},\n    `}
-              <span className="text-[#e8c97d]">"telegram_message"</span>
-              {`:{`}
-              <span className="text-[#e8c97d]">"text"</span>
-              {`:`}
-              <span className="text-[#9de29a]">"shipped v0.4"</span>
-              {`}\n  }\n`}
-              <span className="text-[#e8c97d]">{`}'`}</span>
-            </CodeCard>
-            </div>
-          </div>
-        </section>
-
-        {/* ── INSTALL ───────────────────────────────────────────────────── */}
-        <section id="install" className="border-b border-[var(--color-border)]">
-          <div className="mx-auto max-w-6xl px-6 py-20">
-            <h2 className="text-2xl font-bold tracking-tight mb-2">Get started in 60 seconds.</h2>
-            <p className="text-[var(--color-body)] mb-8 max-w-2xl">
-              Five ways to install — pick what fits your stack.
-            </p>
-
-            {/* tab strip — setup time + platform baked in */}
-            <div className="flex flex-wrap gap-2 mb-6">
-              {INSTALL_ORDER.map(key => {
-                const m = INSTALL[key];
-                const active = activeInstall === key;
-                return (
-                  <button
-                    key={key}
-                    onClick={() => setActiveInstall(key)}
-                    className={`flex flex-col items-start gap-0.5 rounded-lg border px-4 py-2.5 transition-all ${
-                      active
-                        ? "border-[var(--color-accent)] bg-[var(--color-accent-dim)] text-[var(--color-fg)]"
-                        : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-body)] hover:border-[var(--color-fg)]"
-                    }`}
-                  >
-                    <span className="flex items-center gap-2 text-sm font-medium">
-                      <span>{m.icon}</span>
-                      <span>{m.label}</span>
-                    </span>
-                    <span className={`text-[10px] font-normal pl-[22px] ${active ? "text-[var(--color-body)]" : "text-[var(--color-muted)]"}`}>
-                      {m.time} · {m.needs}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* snippet pane */}
-            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
-              <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--color-border)]">
-                <span className="size-3 rounded-full bg-red-500/60" />
-                <span className="size-3 rounded-full bg-yellow-500/60" />
-                <span className="size-3 rounded-full bg-green-500/60" />
-                <span className="ml-3 font-mono text-xs text-[var(--color-muted)]">
-                  {INSTALL[activeInstall].icon} {INSTALL[activeInstall].label}
+              <h1 className="mt-4 text-4xl font-bold leading-[1.02] tracking-[-0.03em] sm:text-5xl">
+                One HTTP call.
+                <br />
+                <span className="text-[var(--color-primary)]">
+                  {ADAPTER_COUNT} platforms.
                 </span>
+                <br />
+                Your infrastructure.
+              </h1>
+
+              <p className="mt-6 max-w-md text-[var(--color-body)] leading-relaxed">
+                Open-Dispatch is a queue and a set of adapters that posts to
+                social platforms. You run it. Your OAuth tokens never leave
+                the machine, and there is no per-account meter.
+              </p>
+
+              <div className="mt-8 flex flex-wrap gap-3">
+                <a
+                  href="#install"
+                  className="inline-flex items-center gap-2 rounded-md bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-[var(--color-on-primary)] transition-opacity hover:opacity-90"
+                >
+                  Install it <ArrowRight size={16} />
+                </a>
+                <a
+                  href={GITHUB}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-md border border-[var(--color-border)] px-5 py-2.5 text-sm font-semibold text-[var(--color-fg)] transition-colors hover:border-[var(--color-primary)]"
+                >
+                  <GitHubIcon /> Source
+                </a>
               </div>
 
-              {activeInstall === "dmg" ? (
-                <DownloadPane />
-              ) : (
-                <pre className="overflow-x-auto p-5 text-xs font-mono leading-relaxed whitespace-pre">
-                  <HighlightedShell code={INSTALL[activeInstall].snippet} />
-                </pre>
-              )}
+              {/* Logo wall: the real marks, one per registered adapter. */}
+              <div className="mt-10">
+                <p className="font-mono text-xs text-[var(--color-muted)]">
+                  {ADAPTER_COUNT} registered adapters
+                </p>
+                <ul className="mt-3 grid max-w-xs grid-cols-5 gap-2">
+                  {PLATFORMS.map((p) => (
+                    <li key={p.target}>
+                      <span className="logo-tile" title={p.name}>
+                        {/* Plain img, not next/image: these are local static SVG
+                            brand marks with fixed dimensions, and next/image's
+                            optimizer serves them inconsistently (it also refuses
+                            SVG without dangerouslyAllowSVG). */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={`/logos/${p.slug}.svg`}
+                          alt={p.name}
+                          width={20}
+                          height={20}
+                        />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
 
-              {INSTALL[activeInstall].note && (
-                <div className="border-t border-[var(--color-border)] px-5 py-3 text-xs text-[var(--color-muted)]">
-                  ℹ️ {INSTALL[activeInstall].note}
-                </div>
-              )}
+            {/* The one authored moment: a real request and its real response. */}
+            <div className="panel-enter">
+              <RequestPanel />
             </div>
           </div>
         </section>
 
-        {/* ── WHY NOT HOSTED ────────────────────────────────────────────── */}
-        <section id="why" className="border-b border-[var(--color-border)]">
-          <div className="mx-auto max-w-5xl px-6 py-20">
-            <h2 className="text-2xl font-bold tracking-tight mb-2 text-center">
-              Why not just use a hosted scheduler?
+        {/* ── THE PROBLEM ───────────────────────────────────────────────── */}
+        <section className="border-b border-[var(--color-border)]">
+          <div className="mx-auto max-w-6xl px-6 py-20">
+            <h2 className="text-2xl font-bold tracking-tight">
+              What hosted schedulers take from you
             </h2>
-            <p className="text-[var(--color-body)] mb-10 max-w-2xl mx-auto text-center text-sm">
-              Hosted tools rent you access to your own audience. Open-Dispatch hands you the keys.
-            </p>
-
-            <div className="rounded-xl border border-[var(--color-border)] overflow-hidden">
-              {/* header row */}
-              <div className="grid grid-cols-[auto_1fr_1fr] text-xs font-semibold uppercase tracking-wider">
-                <div className="px-4 py-3 bg-[var(--color-surface)] border-b border-[var(--color-border)]" />
-                <div className="px-4 py-3 bg-[var(--color-surface)] border-b border-l border-[var(--color-border)] text-[var(--color-muted)]">
-                  Hosted tools
-                </div>
-                <div className="px-4 py-3 bg-[var(--color-accent-dim)] border-b border-l border-[var(--color-border)] text-[var(--color-accent)]">
+            <div className="mt-8 overflow-hidden rounded-xl border border-[var(--color-border)]">
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] border-b border-[var(--color-border)] bg-[var(--color-surface)] text-xs font-semibold uppercase tracking-wider">
+                <div className="px-5 py-3 text-[var(--color-muted)]">Hosted tools</div>
+                <div className="border-l border-[var(--color-border)] px-5 py-3 text-[var(--color-primary)]">
                   Open-Dispatch
                 </div>
               </div>
-
-              {/* rows */}
-              {COMPARE_POINTS.map((row, i) => (
+              {[
+                ["Per-account fees that compound monthly", "Self-host free, no ceilings"],
+                ["OAuth tokens held on someone else's servers", "Credentials stay in your .env"],
+                ["Failures buried in a vendor dashboard", "Every error in your queue, retryable"],
+                ["Inbox, analytics, and scheduling behind paid tiers", "All ten platforms in one build"],
+                ["Your audience's data lingers after you cancel", "Your queue, your disk, your call"],
+                ["Vendor lock-in by design", "MIT licensed, fork it whenever"],
+              ].map(([them, us]) => (
                 <div
-                  key={i}
-                  className={`grid grid-cols-[auto_1fr_1fr] text-sm ${
-                    i < COMPARE_POINTS.length - 1 ? "border-b border-[var(--color-border)]" : ""
-                  }`}
+                  key={them}
+                  className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] border-b border-[var(--color-border)] text-sm last:border-b-0"
                 >
-                  <div className="px-4 py-4 flex items-center text-xl select-none">{row.icon}</div>
-                  <div className="px-4 py-4 border-l border-[var(--color-border)] text-[var(--color-body)] flex items-start gap-2">
-                    <span className="text-red-400/80 shrink-0 mt-0.5">✗</span>
-                    <span>{row.them}</span>
+                  <div className="flex items-start gap-2.5 px-5 py-4 text-[var(--color-body)]">
+                    <XIcon size={15} className="mt-0.5 shrink-0 text-[var(--color-muted)]" />
+                    <span>{them}</span>
                   </div>
-                  <div className="px-4 py-4 border-l border-[var(--color-border)] bg-[var(--color-accent-dim)]/30 text-[var(--color-fg)] flex items-start gap-2">
-                    <span className="text-[var(--color-accent)] shrink-0 mt-0.5">✓</span>
-                    <span>{row.us}</span>
+                  <div className="flex items-start gap-2.5 border-l border-[var(--color-border)] px-5 py-4 text-[var(--color-fg)]">
+                    <Check size={15} className="mt-0.5 shrink-0 text-[var(--color-primary)]" />
+                    <span>{us}</span>
                   </div>
                 </div>
               ))}
@@ -474,71 +339,134 @@ export default function Page() {
           </div>
         </section>
 
-        {/* ── FEATURES ──────────────────────────────────────────────────── */}
-        <section id="features" className="border-b border-[var(--color-border)]">
+        {/* ── HOW IT WORKS ──────────────────────────────────────────────── */}
+        <section id="how" className="border-b border-[var(--color-border)]">
           <div className="mx-auto max-w-6xl px-6 py-20">
-            <h2 className="text-2xl font-bold tracking-tight mb-10 text-center">
-              Everything you need. Nothing you don&apos;t.
+            <h2 className="text-2xl font-bold tracking-tight">
+              The whole path, end to end
             </h2>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {FEATURES.map(f => {
-                const FeatureIcon = f.icon;
-                return (
-                <div key={f.title} className="group relative overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 soft-shadow transition-all duration-300 hover:-translate-y-1 hover:border-[#b9a1ff] hover:shadow-[0_24px_60px_rgba(113,56,255,.16)]">
-                  <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-[#7138ff] via-[#ff5f9e] to-[#31d7ff] opacity-70" />
-                  <div className="mb-5 flex size-11 items-center justify-center rounded-xl bg-[var(--color-accent-dim)] text-[var(--color-accent)] transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110"><FeatureIcon size={20} strokeWidth={2.2} /></div>
-                  <h3 className="font-semibold text-[var(--color-fg)] mb-2">{f.title}</h3>
-                  <p className="text-sm text-[var(--color-body)] leading-relaxed">{f.body}</p>
+            <p className="mt-3 max-w-2xl text-[var(--color-body)]">
+              A request enters the queue, a worker picks it up, one adapter
+              publishes it, and a webhook reports the result. There is no
+              hidden step between those four.
+            </p>
+            <div className="mt-8 grid gap-8 lg:grid-cols-2">
+              <PipelineDiagram />
+              <div>
+                <h3 className="font-semibold">
+                  Adding a platform is one function
+                </h3>
+                <p className="mt-2 text-sm text-[var(--color-body)]">
+                  The worker owns retry, backoff, and webhook delivery, so an
+                  adapter only has to publish and report a result.
+                </p>
+                <div className="mt-4">
+                  <CodeCard filename="adapters/myplatform.py">
+{`def publish(
+  unit: ContentUnit,
+  account: str | None
+) -> tuple[bool, str, str]:
+  """(ok, post_id, error)"""`}
+                  </CodeCard>
                 </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── CAPABILITIES ───────────────────────────────────────────────── */}
+        <section className="border-b border-[var(--color-border)]">
+          <div className="mx-auto max-w-6xl px-6 py-20">
+            <h2 className="text-2xl font-bold tracking-tight">
+              What it does, with the artifact that proves it
+            </h2>
+            <div className="mt-8 grid gap-4 sm:grid-cols-2">
+              {CAPABILITIES.map((c) => {
+                const Icon = c.icon;
+                return (
+                  <article
+                    key={c.title}
+                    className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6"
+                  >
+                    <div className="flex items-start gap-4">
+                      <Icon size={20} className="mt-0.5 shrink-0 text-[var(--color-primary)]" />
+                      <div>
+                        <h3 className="font-semibold">{c.title}</h3>
+                        <p className="mt-2 text-sm leading-relaxed text-[var(--color-body)]">
+                          {c.body}
+                        </p>
+                        <p className="mt-3 font-mono text-xs text-[var(--color-muted)]">
+                          {c.evidence}
+                        </p>
+                      </div>
+                    </div>
+                  </article>
                 );
               })}
             </div>
           </div>
         </section>
 
-        {/* ── API REFERENCE ─────────────────────────────────────────────── */}
+        {/* ── API LEDGER ────────────────────────────────────────────────── */}
         <section id="api" className="border-b border-[var(--color-border)]">
           <div className="mx-auto max-w-6xl px-6 py-20">
-            <div className="mb-8 flex items-end justify-between gap-4">
+            <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
-            <h2 className="text-2xl font-bold tracking-tight mb-3">Simple, stable API.</h2>
-            <p className="text-[var(--color-body)] mb-8 max-w-2xl text-sm">
-              Every endpoint is reachable over plain HTTP.{" "}
-              <code className="bg-[var(--color-surface)] border border-[var(--color-border)] px-1.5 py-0.5 rounded text-xs">/queue/&#123;id&#125;</code>
-              {" "}content-negotiates — browsers get the HTML detail page, API clients get JSON.
-            </p>
+                <h2 className="text-2xl font-bold tracking-tight">
+                  Every endpoint, no client library required
+                </h2>
+                <p className="mt-3 max-w-2xl text-[var(--color-body)]">
+                  Plain HTTP with JSON in and JSON out. Full request and
+                  response shapes are on the API reference page.
+                </p>
               </div>
-              <div className="hidden md:flex size-14 items-center justify-center rounded-2xl bg-[var(--color-accent-dim)] text-[var(--color-accent)]"><Terminal size={25} /></div>
+              <Link
+                href="/api-reference"
+                className="inline-flex items-center gap-1.5 font-mono text-sm text-[var(--color-primary)] hover:underline"
+              >
+                API reference <ArrowRight size={14} />
+              </Link>
             </div>
-            <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]">
-              <table className="w-full text-sm font-mono">
+
+            <div className="mt-8 overflow-x-auto rounded-xl border border-[var(--color-border)]">
+              <table className="w-full text-left font-mono text-sm">
                 <thead>
                   <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-                    {["Method","Path","Purpose"].map(h => (
-                      <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-[var(--color-muted)] uppercase tracking-wider">{h}</th>
+                    {["Method", "Path", "Purpose"].map((h) => (
+                      <th
+                        key={h}
+                        className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]"
+                      >
+                        {h}
+                      </th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[var(--color-border)]">
-                  {[
-                    ["GET",    "/healthz",           "Liveness probe — JSON for monitors, HTML dashboard for browsers"],
-                    ["POST",   "/dispatch",          "Enqueue a ContentUnit for one or many platforms"],
-                    ["GET",    "/queue?status=…",    "List rows (queued / publishing / published / failed / dead / canceled)"],
-                    ["GET",    "/campaign/{unit_id}", "Show every platform row for one dispatch"],
-                    ["POST",   "/campaign/{unit_id}/cancel", "Cancel that campaign's queued rows"],
-                    ["GET",    "/queue/{id}",        "One row — JSON or HTML (content-negotiated)"],
-                    ["POST",   "/queue/{id}/retry",  "Re-queue an errored or dead row"],
-                    ["DELETE", "/queue/{id}",        "Delete a single queue row permanently"],
-                    ["POST",   "/ai/adapt",          "Rewrite a caption for each target platform"],
-                    ["POST",   "/media/transcode",   "Resize image to a platform spec"],
-                    ["GET",    "/media/specs",       "List all 10 platform image specs"],
-                  ].map(([method, path, purpose]) => (
-                    <tr key={path} className="hover:bg-[var(--color-surface)]/50 transition-colors">
-                      <td className="px-5 py-3 text-xs">
-                        <span className={`font-semibold ${method === "GET" ? "text-[var(--color-accent)]" : "text-green-400"}`}>{method}</span>
+                <tbody>
+                  {ENDPOINTS.map(([method, path, purpose]) => (
+                    <tr
+                      key={path}
+                      className="border-b border-[var(--color-border)] last:border-b-0"
+                    >
+                      <td className="whitespace-nowrap px-5 py-3 text-xs">
+                        <span
+                          className={
+                            method === "GET"
+                              ? "text-[var(--color-primary)]"
+                              : method === "DELETE"
+                                ? "text-[var(--color-accent)]"
+                                : "text-[var(--color-fg)]"
+                          }
+                        >
+                          {method}
+                        </span>
                       </td>
-                      <td className="px-5 py-3 text-xs text-[var(--color-fg)]">{path}</td>
-                      <td className="px-5 py-3 text-xs text-[var(--color-body)]">{purpose}</td>
+                      <td className="whitespace-nowrap px-5 py-3 text-xs text-[var(--color-fg)]">
+                        {path}
+                      </td>
+                      <td className="px-5 py-3 text-xs text-[var(--color-body)]">
+                        {purpose}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -547,85 +475,65 @@ export default function Page() {
           </div>
         </section>
 
-        {/* ── ARCH + ADAPTER CONTRACT ───────────────────────────────────── */}
-        <section className="border-b border-[var(--color-border)]">
-          <div className="mx-auto max-w-6xl px-6 py-20 grid md:grid-cols-2 gap-14 items-start">
-            <div>
-              <h2 className="text-2xl font-bold tracking-tight mb-4">Architecture at a glance.</h2>
-              <CodeCard filename="flow.txt">
-{`POST /dispatch
-   │
-   ▼
-Queue (JSONL │ Redis │ Postgres)
-   │
-   ▼
-scheduler/worker.py
-   │
-   ├─▶ adapters/twitter.py
-   ├─▶ adapters/bluesky.py
-   ├─▶ adapters/instagram.py
-   ├─▶ adapters/telegram.py
-   ├─▶ adapters/linkedin.py
-   ├─▶ adapters/threads.py
-   └─▶ adapters/youtube.py
-          │
-          ▼  on publish / fail
-      webhook_url`}
-              </CodeCard>
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold tracking-tight mb-4">Add a platform in 80 LOC.</h2>
-              <p className="text-[var(--color-body)] text-sm mb-4 leading-relaxed">
-                One function, one file. The worker handles retry, backoff, and webhooks for you.
-              </p>
-              <CodeCard filename="adapters/myplatform.py">
-                <span className="text-[#79d1ff]">def</span>
-                <span className="text-[var(--color-fg)]"> publish</span>
-                {"(\n  "}
-                <span className="text-[var(--color-fg)]">unit</span>
-                {": "}
-                <span className="text-[#79d1ff]">ContentUnit</span>
-                {",\n  "}
-                <span className="text-[var(--color-fg)]">account</span>
-                {": "}
-                <span className="text-[#79d1ff]">str | None</span>
-                {")\n  -> "}
-                <span className="text-[#79d1ff]">tuple[bool, str, str]</span>
-                {":\n  "}
-                <span className="text-[#7a8fa6]">"""Returns (ok, post_id, error)."""</span>
-                {"\n  ..."}
-              </CodeCard>
-              <ul className="mt-5 space-y-2 text-sm text-[var(--color-body)]">
-                {[
-                  "Write adapters/myplatform.py",
-                  "Add it to ADAPTERS in adapters/__init__.py",
-                  "Document the format key in README",
-                ].map((s, i) => (
-                  <li key={i} className="flex gap-2">
-                    <span className="text-[var(--color-accent)] font-mono shrink-0">{i + 1}.</span>
-                    {s}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </section>
+        {/* ── INSTALL ───────────────────────────────────────────────────── */}
+        <section id="install" className="border-b border-[var(--color-border)]">
+          <div className="mx-auto max-w-6xl px-6 py-20">
+            <h2 className="text-2xl font-bold tracking-tight">
+              Five ways in, shortest first
+            </h2>
 
-        {/* ── N8N ───────────────────────────────────────────────────────── */}
-        <section className="border-b border-[var(--color-border)]">
-          <div className="mx-auto max-w-6xl px-6 py-20 text-center">
-            <div className="text-4xl mb-3">🔌</div>
-            <h2 className="text-2xl font-bold tracking-tight mb-3">Native n8n integration.</h2>
-            <p className="text-[var(--color-body)] max-w-md mx-auto mb-6 text-sm">
-              Community node ships in the repo. Build it once, use all five operations from the visual editor — no JSON wiring.
-            </p>
-            <div className="inline-flex flex-wrap justify-center gap-2 mb-6">
-              {["Dispatch","Adapt Caption","Get Row","Retry Row","List Queue"].map(op => (
-                <span key={op} className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-1.5 text-sm text-[var(--color-body)]">{op}</span>
-              ))}
+            <div
+              role="tablist"
+              aria-label="Install method"
+              className="mt-8 flex flex-wrap gap-2"
+            >
+              {INSTALL_ORDER.map((key) => {
+                const m = INSTALL[key];
+                const active = activeInstall === key;
+                return (
+                  <button
+                    key={key}
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setActiveInstall(key)}
+                    className={`flex flex-col items-start rounded-lg border px-4 py-2.5 text-left transition-colors ${
+                      active
+                        ? "border-[var(--color-primary)] bg-[var(--color-secondary)] text-[var(--color-fg)]"
+                        : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-body)] hover:border-[var(--color-muted)]"
+                    }`}
+                  >
+                    <span className="text-sm font-medium">{m.label}</span>
+                    <span className="mt-0.5 font-mono text-[11px] text-[var(--color-muted)]">
+                      {m.time} · {m.needs}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-            <div className="font-mono text-xs text-[var(--color-muted)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg px-5 py-3 inline-block">
-              cd n8n-node &amp;&amp; npm install &amp;&amp; npm run build
+
+            <div className="panel mt-4 overflow-hidden">
+              <div className="terminal-bar">
+                <span className="terminal-dot" />
+                <span className="terminal-dot" />
+                <span className="terminal-dot" />
+                <span className="ml-2 font-mono text-xs text-[var(--color-muted)]">
+                  {INSTALL[activeInstall].label}
+                </span>
+              </div>
+
+              {activeInstall === "dmg" ? (
+                <DownloadPane />
+              ) : (
+                <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed whitespace-pre text-[var(--color-body)]">
+                  {INSTALL[activeInstall].snippet}
+                </pre>
+              )}
+
+              {INSTALL[activeInstall].note && (
+                <p className="border-t border-[var(--color-border)] px-5 py-3 text-xs text-[var(--color-muted)]">
+                  {INSTALL[activeInstall].note}
+                </p>
+              )}
             </div>
           </div>
         </section>
@@ -633,58 +541,78 @@ scheduler/worker.py
         {/* ── FAQ ───────────────────────────────────────────────────────── */}
         <section id="faq" className="border-b border-[var(--color-border)]">
           <div className="mx-auto max-w-4xl px-6 py-20">
-            <h2 className="text-2xl font-bold tracking-tight mb-10">Frequently asked questions.</h2>
-            <div className="divide-y divide-[var(--color-border)]">
-              {FAQS.map((faq, i) => (
-                <div key={i} className="py-7 grid sm:grid-cols-[1fr_2fr] gap-4 sm:gap-10">
-                  <h3 className="text-sm font-semibold text-[var(--color-fg)] leading-snug">{faq.q}</h3>
-                  <p className="text-sm text-[var(--color-body)] leading-relaxed">{faq.a}</p>
+            <h2 className="text-2xl font-bold tracking-tight">
+              Questions worth answering before you install
+            </h2>
+            <dl className="mt-8 divide-y divide-[var(--color-border)]">
+              {FAQS.map((f) => (
+                <div
+                  key={f.q}
+                  className="grid gap-3 py-7 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] sm:gap-10"
+                >
+                  <dt className="text-sm font-semibold leading-snug">{f.q}</dt>
+                  <dd className="text-sm leading-relaxed text-[var(--color-body)]">
+                    {f.a}
+                  </dd>
                 </div>
               ))}
-            </div>
+            </dl>
           </div>
         </section>
 
-        {/* ── FINAL CTA ─────────────────────────────────────────────────── */}
+        {/* ── CLOSE ─────────────────────────────────────────────────────── */}
         <section>
-          <div className="mx-auto max-w-6xl px-6 py-24 text-center">
-            <h2 className="text-3xl font-bold tracking-tight mb-4">Ready to dispatch?</h2>
-            <p className="text-[var(--color-body)] max-w-md mx-auto mb-8 text-sm">
-              MIT licensed. Self-host forever free. Your platform credentials never leave your .env.
-            </p>
-            <div className="flex flex-wrap justify-center gap-4">
-              <a href="#install"
-                className="inline-flex items-center gap-2 rounded bg-[var(--color-accent)] px-6 py-3 text-sm font-semibold text-white hover:opacity-90 transition-opacity">
-                Get started ↓
-              </a>
-              <Link href={GITHUB} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded border border-[var(--color-border)] px-6 py-3 text-sm font-semibold text-[var(--color-fg)] hover:border-[var(--color-accent)] transition-colors">
-                <GitHubIcon /> View on GitHub
-              </Link>
+          <div className="mx-auto max-w-6xl px-6 py-24">
+            <div className="flex flex-wrap items-center justify-between gap-8">
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight">
+                  Run it yourself
+                </h2>
+                <p className="mt-2 font-mono text-sm text-[var(--color-body)]">
+                  {TEST_COUNT} tests · {ADAPTER_COUNT} adapters · 3 queue
+                  backends · MIT
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <a
+                  href="#install"
+                  className="inline-flex items-center gap-2 rounded-md bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-[var(--color-on-primary)] transition-opacity hover:opacity-90"
+                >
+                  Install <ArrowRight size={16} />
+                </a>
+                <a
+                  href={GITHUB}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-md border border-[var(--color-border)] px-5 py-2.5 text-sm font-semibold text-[var(--color-fg)] transition-colors hover:border-[var(--color-primary)]"
+                >
+                  <GitHubIcon /> GitHub
+                </a>
+              </div>
             </div>
-            <p className="mt-8 text-xs text-[var(--color-muted)]">
-              210 tests · 10 platform adapters · 3 queue backends · 5 install methods
-            </p>
           </div>
         </section>
       </main>
 
-      {/* ── FOOTER ────────────────────────────────────────────────────────── */}
-      <footer className="border-t border-[var(--color-border)] py-8">
-        <div className="mx-auto max-w-6xl px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[var(--color-muted)]">
-          <span className="font-mono">open-dispatch — MIT License</span>
-          <div className="flex gap-5">
+      <footer className="border-t border-[var(--color-border)]">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-8 font-mono text-xs text-[var(--color-muted)] sm:flex-row">
+          <span>open-dispatch · MIT</span>
+          <div className="flex flex-wrap justify-center gap-5">
             {[
-              ["GitHub",       GITHUB],
-              ["Releases",     GITHUB + "/releases"],
-              ["Contributing", GITHUB + "/blob/main/CONTRIBUTING.md"],
-              ["Security",     GITHUB + "/blob/main/SECURITY.md"],
-              ["Install docs", GITHUB + "/blob/main/INSTALL_METHODS.md"],
+              ["Releases", `${GITHUB}/releases`],
+              ["Contributing", `${GITHUB}/blob/main/CONTRIBUTING.md`],
+              ["Security", `${GITHUB}/blob/main/SECURITY.md`],
+              ["Install docs", `${GITHUB}/blob/main/INSTALL_METHODS.md`],
             ].map(([label, href]) => (
-              <Link key={label} href={href} target="_blank" rel="noopener noreferrer"
-                className="hover:text-[var(--color-fg)] transition-colors">
+              <a
+                key={label}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="transition-colors hover:text-[var(--color-fg)]"
+              >
                 {label}
-              </Link>
+              </a>
             ))}
           </div>
         </div>
@@ -693,83 +621,169 @@ scheduler/worker.py
   );
 }
 
-/* ── helpers ──────────────────────────────────────────────────────────────── */
+/* ── Pieces ────────────────────────────────────────────────────────────── */
 
-/** Renders shell code with # comments visually dimmed */
-function HighlightedShell({ code }: { code: string }) {
+/**
+ * The hero visual: a real request and the real response shape it returns.
+ * Both are copied from the repo's own test fixtures and endpoint docs, so the
+ * first thing a visitor sees is literally what the tool does.
+ */
+function RequestPanel() {
   return (
-    <>
-      {code.split("\n").map((line, i) => {
-        const isComment = line.trimStart().startsWith("#");
-        return (
-          <span key={i}>
-            <span className={isComment ? "text-[#4a5a6a]" : "text-[var(--color-body)]"}>
-              {line}
-            </span>
-            {"\n"}
+    <div className="panel overflow-hidden">
+      <div className="terminal-bar">
+        <span className="terminal-dot" />
+        <span className="terminal-dot" />
+        <span className="terminal-dot" />
+        <span className="ml-2 font-mono text-xs text-[var(--color-muted)]">
+          dispatch.sh
+        </span>
+      </div>
+
+      <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed">
+        <code>
+          <span className="tok-pun">$ </span>
+          <span className="tok-key">curl</span>
+          <span className="text-[var(--color-body)]"> -X POST </span>
+          <span className="text-[var(--color-body)]">
+            http://localhost:8000/dispatch
           </span>
-        );
-      })}
-    </>
+          {"\n"}
+          <span className="tok-pun">  </span>
+          <span className="tok-key">-H</span>
+          <span className="tok-str">
+            {" "}
+            &quot;Content-Type: application/json&quot;
+          </span>
+          {"\n"}
+          <span className="tok-pun">  </span>
+          <span className="tok-key">-d</span>
+          <span className="text-[var(--color-body)]">{' '}</span>
+          <span className="tok-str">
+            &apos;{`{"targets":["bluesky","telegram"],`}
+          </span>
+          {"\n"}
+          <span className="tok-pun">   </span>
+          <span className="tok-str">
+            {" "}
+            &quot;formats&quot;:{`{"bluesky_post":{"text":"shipped v0.4"},`}
+          </span>
+          {"\n"}
+          <span className="tok-pun">   </span>
+          <span className="tok-str">
+            {" "}
+            &quot;telegram_message&quot;:{`{"text":"shipped v0.4"}}}}`}
+          </span>
+          {"\n\n"}
+          <span className="tok-cmt"># 202 Accepted</span>
+          {"\n"}
+          <span className="tok-pun">{`{`}</span>
+          <span className="tok-key">&quot;id&quot;</span>
+          <span className="tok-pun">:</span>
+          <span className="tok-str">&quot;7f3a91c4&quot;</span>
+          <span className="tok-pun">,</span>
+          {"\n"}
+          <span className="tok-pun"> </span>
+          <span className="tok-key">&quot;status&quot;</span>
+          <span className="tok-pun">:</span>
+          <span className="tok-str">&quot;queued&quot;</span>
+          <span className="tok-pun">,</span>
+          {"\n"}
+          <span className="tok-pun"> </span>
+          <span className="tok-key">&quot;targets&quot;</span>
+          <span className="tok-pun">:[</span>
+          <span className="tok-str">&quot;bluesky&quot;</span>
+          <span className="tok-pun">,</span>
+          <span className="tok-str">&quot;telegram&quot;</span>
+          <span className="tok-pun">]</span>
+          <span className="tok-pun">{`}`}</span>
+        </code>
+      </pre>
+    </div>
   );
 }
 
-/** Download pane shown for the macOS App tab */
+/** The real dispatch path, as the repo actually wires it. */
+function PipelineDiagram() {
+  return (
+    <div className="panel overflow-hidden">
+      <div className="terminal-bar">
+        <span className="terminal-dot" />
+        <span className="terminal-dot" />
+        <span className="terminal-dot" />
+        <span className="ml-2 font-mono text-xs text-[var(--color-muted)]">
+          request path
+        </span>
+      </div>
+      <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed text-[var(--color-body)]">
+{`POST /dispatch
+      |
+      v
+Queue   JSONL | Redis | Postgres
+      |
+      v
+scheduler/worker.py
+      |
+      +--> adapters/<platform>.py   x {ADAPTER_COUNT}
+      |
+      v  on publish or fail
+  webhook_url`}
+      </pre>
+    </div>
+  );
+}
+
 function DownloadPane() {
   return (
-    <div className="flex flex-col items-center justify-center py-14 px-6 text-center gap-6">
-      <div className="text-6xl select-none">🍎</div>
+    <div className="flex flex-col items-center gap-5 px-6 py-14 text-center">
       <div>
-        <p className="text-[var(--color-fg)] font-semibold text-lg">Open-Dispatch 0.4.0</p>
-        <p className="text-[var(--color-muted)] text-xs mt-1.5">
-          macOS 13 Ventura or later &nbsp;·&nbsp; Apple Silicon &amp; Intel
+        <p className="text-lg font-semibold">Open-Dispatch 0.4.0</p>
+        <p className="mt-1.5 font-mono text-xs text-[var(--color-muted)]">
+          macOS 13 Ventura or later · Apple Silicon and Intel
         </p>
       </div>
       <a
         href={DMG_URL}
-        className="inline-flex items-center gap-2 rounded bg-[var(--color-accent)] px-7 py-3 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
+        className="inline-flex items-center gap-2 rounded-md bg-[var(--color-primary)] px-6 py-2.5 text-sm font-semibold text-[var(--color-on-primary)] transition-opacity hover:opacity-90"
       >
-        ↓ Download .dmg
+        Download .dmg
       </a>
-      <p className="text-xs text-[var(--color-muted)]">
-        Or{" "}
+      <p className="font-mono text-xs text-[var(--color-muted)]">
         <a
           href={`${GITHUB}/releases`}
-          target="_blank" rel="noopener noreferrer"
-          className="underline underline-offset-2 hover:text-[var(--color-fg)]"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-[var(--color-fg)] hover:underline"
         >
-          browse all releases
+          all releases
         </a>
-        {" "}· Build from source:{" "}
-        <code className="bg-[var(--color-bg)] px-1.5 py-0.5 rounded text-[10px]">
-          bash scripts/make-dmg.sh
-        </code>
+        {"  ·  "}
+        build from source:{" "}
+        <span className="text-[var(--color-body)]">bash scripts/make-dmg.sh</span>
       </p>
     </div>
   );
 }
 
-function GridBg() {
+function CodeCard({
+  filename,
+  children,
+}: {
+  filename: string;
+  children: string;
+}) {
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.04]"
-      style={{
-        backgroundImage: "linear-gradient(var(--color-fg) 1px,transparent 1px),linear-gradient(90deg,var(--color-fg) 1px,transparent 1px)",
-        backgroundSize: "40px 40px",
-      }} />
-  );
-}
-
-function CodeCard({ filename, children }: { filename: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden shadow-xl shadow-black/30">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--color-border)]">
-        <span className="size-3 rounded-full bg-red-500/60" />
-        <span className="size-3 rounded-full bg-yellow-500/60" />
-        <span className="size-3 rounded-full bg-green-500/60" />
-        <span className="ml-2 font-mono text-xs text-[var(--color-muted)]">{filename}</span>
+    <div className="panel overflow-hidden">
+      <div className="terminal-bar">
+        <span className="terminal-dot" />
+        <span className="terminal-dot" />
+        <span className="terminal-dot" />
+        <span className="ml-2 font-mono text-xs text-[var(--color-muted)]">
+          {filename}
+        </span>
       </div>
-      <pre className="overflow-x-auto p-5 text-xs font-mono leading-relaxed text-[var(--color-body)] whitespace-pre">
-        {children}
+      <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed text-[var(--color-body)]">
+        <code>{children}</code>
       </pre>
     </div>
   );
