@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white&labelColor=141418" alt="Docker ready">
 </p>
 
-Open-Dispatch is the **infrastructure layer** for content distribution. Like Stripe is to payments, this is to posting. One HTTP call, seven platforms, zero vendor lock-in. Integrate from any app, n8n workflow, cron job, or AI agent.
+Open-Dispatch is the **infrastructure layer** for content distribution. Like Stripe is to payments, this is to posting. One HTTP call, ten platforms, zero vendor lock-in. Integrate from any app, n8n workflow, cron job, or AI agent.
 
 <p align="center">
   <!-- Record a 30s demo (see docs/DEMO_SCRIPT.md) and drop it here as docs/demo.gif -->
@@ -209,7 +209,9 @@ cp .env.example .env
 $EDITOR .env
 ```
 
-**Where do I get the API keys?** See [CREDENTIALS_GUIDE.html](CREDENTIALS_GUIDE.html) — a step-by-step reference for Twitter, Instagram, Telegram, Bluesky, LinkedIn, Threads, YouTube. Open it in a browser.
+**Where do I get the API keys?** Each platform's own developer console issues its keys. [`.env.example`](.env.example) lists every variable Open-Dispatch reads, grouped by platform, with the scope each one needs: Telegram, Twitter / X, Instagram (Graph API, needs public media URLs), Bluesky (App Password, not your login password), LinkedIn (3-legged OAuth with `w_member_social`), Threads (Meta Graph API), YouTube Shorts (Data API v3), TikTok (Content Posting API v2), Facebook (Meta Graph API, Page token), and Discord (webhook, no bot required).
+
+Only fill in the platforms you actually dispatch to. The API does not complain about targets whose env vars are unset.
 
 ```env
 # ── Twitter / X ──────────────────────────────────────────────────────────────

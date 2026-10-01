@@ -1,16 +1,30 @@
+/*
+ * Open-Dispatch landing :: build stamp
+ *
+ * mood: technical / dark          structure: Product Demo Workbench (#7)
+ * palette: generate_palette.py --mood technical --mode dark (base 253.4, accent 13.4, triadic)
+ * contrast: 10 text-safe pairs, 4 UI-safe, 7 decorative (full matrix in .tastemaker/style-lock.md)
+ * rotation: first build under this skill; no prior log.json entry to rotate against
+ * copy: "One HTTP call. Ten platforms." (count verified against adapters/__init__.py (10 registered)
+ */
+
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
-  --color-bg: #0d0a14;
-  --color-surface: #171321;
-  --color-border: #332943;
-  --color-muted: #958aa8;
-  --color-body: #c0b6ca;
-  --color-fg: #faf7ff;
-  --color-accent: #a987ff;
-  --color-accent-dim: #2b1f4a;
+
+  /* Generated contract: do not hand-edit. See .tastemaker/style-lock.md */
+  --color-bg: #0f1318;
+  --color-surface: #1b1f24;
+  --color-secondary: #202f41;
+  --color-border: #262b30;
+  --color-primary: #4277b4;
+  --color-on-primary: #ffffff;
+  --color-accent: #da818a;
+  --color-fg: #eaf3fe;
+  --color-body: #a8b4c0;
+  --color-muted: #6f7d8a;
 }
 
 body {
@@ -18,38 +32,114 @@ body {
   color: var(--color-fg);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
-  background-image: radial-gradient(circle at 8% 4%, rgba(113,56,255,.22), transparent 24rem), radial-gradient(circle at 94% 22%, rgba(255,95,158,.16), transparent 26rem);
 }
 
-::selection { background: #dacbff; color: #17131f; }
-
-.signal-gradient {
-  background: linear-gradient(110deg, #6d35ff 0%, #d23cff 38%, #ff5f9e 68%, #31d7ff 100%);
+::selection {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
 }
 
-.glass-panel {
-  background: rgba(23,19,33,.76);
-  border: 1px solid rgba(169,135,255,.24);
-  box-shadow: 0 24px 70px rgba(0,0,0,.28), 0 2px 8px rgba(0,0,0,.18);
-  backdrop-filter: blur(18px);
+html {
+  color-scheme: dark;
+  scroll-behavior: smooth;
 }
 
-.soft-shadow { box-shadow: 0 18px 45px rgba(0,0,0,.28), 0 2px 8px rgba(0,0,0,.18); }
+/* ── Surfaces ───────────────────────────────────────────────────────────── */
 
-.dot-grid {
-  background-image: radial-gradient(rgba(169,135,255,.28) 1px, transparent 1px);
-  background-size: 16px 16px;
+/* Raised panel: code cards, endpoint rows, install pane. */
+.panel {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
 }
 
-html { color-scheme: dark; }
+/* Terminal chrome: the three-dot header on every code card. */
+.terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-secondary);
+  border-radius: 0.75rem 0.75rem 0 0;
+}
 
-@keyframes float-signal { 0%,100% { transform: translate3d(0,0,0); } 50% { transform: translate3d(0,-8px,0); } }
-.float-signal { animation: float-signal 5s ease-in-out infinite; }
-@media (prefers-reduced-motion: reduce) { .float-signal, .animate-pulse { animation: none !important; } * { scroll-behavior: auto !important; } }
+.terminal-dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 9999px;
+  background-color: var(--color-muted);
+  opacity: 0.55;
+}
 
-/* Syntax highlight token colors */
-.token-keyword  { color: #79d1ff; }
-.token-string   { color: #9de29a; }
-.token-key      { color: #e8c97d; }
-.token-comment  { color: var(--color-muted); }
-.token-bracket  { color: #7a8fa6; }
+/* ── Logo wall ──────────────────────────────────────────────────────────── */
+
+/* Real brand marks on a flat surface, not chips floating on gradient. */
+.logo-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.625rem;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface);
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+.logo-tile:hover {
+  border-color: var(--color-primary);
+  background-color: var(--color-secondary);
+}
+
+.logo-tile img {
+  width: 1.25rem;
+  height: 1.25rem;
+  object-fit: contain;
+  /* Brand marks are multi-colour; keep them at full opacity so the row reads
+     as ten distinct services rather than ten identical glyphs. */
+  opacity: 0.82;
+}
+
+.logo-tile:hover img {
+  opacity: 1;
+}
+
+/* ── Focus ──────────────────────────────────────────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ── Syntax tokens (code cards only) ────────────────────────────────────── */
+.tok-key { color: #79d1ff; }
+.tok-str { color: #9de29a; }
+.tok-num { color: #e8c97d; }
+.tok-cmt { color: var(--color-muted); }
+.tok-pun { color: #7a8fa6; }
+
+/* ── Motion ─────────────────────────────────────────────────────────────── */
+
+/* One authored moment: the request panel assembles on first view. Everything
+   else on this page is deliberately still. A developer tool that bounces is
+   a developer tool nobody trusts with a production queue. */
+@keyframes panel-in {
+  from { opacity: 0; transform: translate3d(0, 12px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+.panel-enter {
+  animation: panel-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-enter { animation: none; }
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

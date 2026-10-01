@@ -82,6 +82,6 @@
   <!-- ── footer strip ─────────────────────────────────────────────────── -->
   <g transform="translate(80,576)" font-size="20">
     <text x="0" y="0" fill="#4ade80">$ docker compose up -d</text>
-    <text x="360" y="0" fill="#8b8b95">·  one command  ·  7 platforms  ·  $0 forever</text>
+    <text x="360" y="0" fill="#8b8b95">·  one command  ·  10 platforms  ·  $0 forever</text>
   </g>
 </svg>

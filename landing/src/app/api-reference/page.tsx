@@ -69,7 +69,7 @@ const ENDPOINTS = [
     method: "GET",
     path: "/queue/{id}",
     purpose: "Get one queue row",
-    description: "Content-negotiated — JSON for API clients (Accept: application/json), HTML detail page for browsers.",
+    description: "Content-negotiated: JSON for API clients (Accept: application/json), HTML detail page for browsers.",
     example: `curl -H "Accept: application/json" http://localhost:8000/queue/abc123`,
     response: `{"id": "abc123", "status": "published", "post_id": "1234567890", ...}`,
   },
@@ -97,7 +97,7 @@ const ENDPOINTS = [
     example: `curl -X POST http://localhost:8000/ai/adapt \\
   -H "Content-Type: application/json" \\
   -d '{
-    "text": "We just shipped v0.4 — self-host free, MIT.",
+    "text": "We just shipped v0.4. Self-host free, MIT.",
     "platforms": ["twitter", "linkedin", "instagram"]
   }'`,
     response: `{"twitter": "v0.4 is live. self-host free, MIT ↓", "linkedin": "...", "instagram": "..."}`,
@@ -170,7 +170,7 @@ export default function ApiReferencePage() {
             <code className="bg-[var(--color-surface)] border border-[var(--color-border)] px-1.5 py-0.5 rounded text-xs">
               http://localhost:8000
             </code>
-            . No auth is required by default — it's designed for trusted self-hosting. Before
+            No auth is required by default, which suits trusted self-hosting. Before{" "}
             exposing the port beyond localhost, set{" "}
             <code className="text-[10px] bg-[var(--color-bg)] px-1 rounded">OPEN_DISPATCH_API_TOKEN</code>{" "}
             and send an <code className="text-[10px] bg-[var(--color-bg)] px-1 rounded">Authorization: Bearer &lt;token&gt;</code>{" "}
@@ -216,7 +216,7 @@ export default function ApiReferencePage() {
         {/* ContentUnit shape */}
         <div className="mt-14 border border-[var(--color-border)] rounded-xl overflow-hidden">
           <div className="px-5 py-4 bg-[var(--color-surface)] border-b border-[var(--color-border)]">
-            <h2 className="text-sm font-semibold text-[var(--color-fg)]">ContentUnit — full shape</h2>
+            <h2 className="text-sm font-semibold text-[var(--color-fg)]">ContentUnit: full shape</h2>
           </div>
           <div className="px-5 py-5">
             <CodeBlock code={`{

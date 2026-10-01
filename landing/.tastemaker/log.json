@@ -1,0 +1,39 @@
+{
+  "entries": [
+    {
+      "date": "2026-10-01",
+      "project": "Open-Dispatch",
+      "surface": "landing/ (public marketing, Next.js 16 + Tailwind 4)",
+      "mood": "technical",
+      "mode": "dark (locked, no toggle)",
+      "palette_seed": "generate_palette.py --mood technical --mode dark (base 253.4, accent 13.4, triadic)",
+      "macrostructure": "Product Demo / Workbench (#7)",
+      "archetypes": {
+        "nav": "sticky, mono wordmark, 4 anchors + GitHub",
+        "hero": "workbench split: promise left, live request/response right",
+        "feature": "evidence cards, each with the artifact that proves it",
+        "proof": "hosted-vs-self comparator table",
+        "cta": "install tab matrix, shortest-first"
+      },
+      "narrative_arc": [
+        "hook: one HTTP call, ten platforms",
+        "problem: hosted schedulers hold your tokens",
+        "solution: the queue is yours, three backends",
+        "how: dispatch -> queue -> worker -> adapter -> webhook",
+        "proof: verified counts only",
+        "close: five install paths, shortest first"
+      ],
+      "prior_build_rotation": "first build under this skill; no prior entry to rotate against",
+      "critique_scores": {
+        "show_dont_tell": 5,
+        "philosophy": 4,
+        "hierarchy": 5,
+        "specificity": 5,
+        "restraint": 4,
+        "variety": 3
+      },
+      "outcome": "pending-review",
+      "notes": "Corrected a factual error: page claimed seven platforms, repo registers ten. All counts now derived from repo (ADAPTERS, media specs, pytest, queue backends). Emoji icons removed in favor of fetched monochrome brand marks."
+    }
+  ]
+}
