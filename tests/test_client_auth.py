@@ -15,7 +15,18 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import cli  # noqa: E402
-import mcp_server  # noqa: E402
+
+# mcp_server raises SystemExit at import time when the optional `mcp` extra is
+# absent, and CI installs requirements.txt only — so import it defensively and
+# skip the MCP half of this module rather than aborting collection.
+try:
+    import mcp_server  # noqa: E402
+    MCP_AVAILABLE = True
+except SystemExit:
+    mcp_server = None  # type: ignore[assignment]
+    MCP_AVAILABLE = False
+
+requires_mcp = pytest.mark.skipif(not MCP_AVAILABLE, reason="mcp extra not installed")
 
 
 def _clear(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -105,16 +116,19 @@ def test_cli_headers_use_flag_token(monkeypatch: pytest.MonkeyPatch) -> None:
 
 # ── MCP server ───────────────────────────────────────────────────────────────
 
+@requires_mcp
 def test_mcp_headers_empty_without_token(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear(monkeypatch)
     assert mcp_server._auth_headers() == {}
 
 
+@requires_mcp
 def test_mcp_headers_carry_bearer_token(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPEN_DISPATCH_API_TOKEN", "s3cret")
     assert mcp_server._auth_headers() == {"Authorization": "Bearer s3cret"}
 
 
+@requires_mcp
 def test_mcp_get_sends_auth_header(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPEN_DISPATCH_API_TOKEN", "s3cret")
     seen: dict = {}
@@ -139,6 +153,7 @@ def test_mcp_get_sends_auth_header(monkeypatch: pytest.MonkeyPatch) -> None:
     assert seen["headers"]["Accept"] == "application/json"
 
 
+@requires_mcp
 def test_mcp_post_sends_auth_header(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPEN_DISPATCH_API_TOKEN", "s3cret")
     seen: dict = {}
@@ -162,6 +177,7 @@ def test_mcp_post_sends_auth_header(monkeypatch: pytest.MonkeyPatch) -> None:
     assert seen["headers"]["Authorization"] == "Bearer s3cret"
 
 
+@requires_mcp
 def test_mcp_delete_sends_auth_header(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPEN_DISPATCH_API_TOKEN", "s3cret")
     seen: dict = {}
