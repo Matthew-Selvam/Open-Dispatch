@@ -762,6 +762,14 @@ def _profile_from_form(form: Any, profile_id: str | None = None) -> Profile:
     for platform, fields in PLATFORM_CRED_MAP.items():
         creds = platforms.setdefault(platform, {})
         for field_name in fields:
+            # The edit form renders credentials with value="" (secrets are never
+            # sent to the browser), so an empty submit can only mean "unchanged".
+            # A checkbox submits "<field>__clear" to explicitly remove a stored
+            # credential — otherwise a rotated, leaked token could never be
+            # deleted through the UI.
+            if str(form.get(f"{platform}__{field_name}__clear", "")).strip():
+                creds.pop(field_name, None)
+                continue
             submitted = str(form.get(f"{platform}__{field_name}", "")).strip()
             if submitted:
                 creds[field_name] = submitted
