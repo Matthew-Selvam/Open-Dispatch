@@ -16,10 +16,13 @@ import logging
 import os
 from pathlib import Path
 
+from adapters.errors import PERMANENT, clip, prefix_error
 from api.schema import ContentUnit
 from media.paths import resolve_media_path
 
 log = logging.getLogger("open-dispatch.bluesky")
+POST_LIMIT = 300
+MAX_IMAGES = 4
 
 
 def _creds(account: str | None) -> tuple[str, str]:
@@ -50,7 +53,12 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
             root = None
             first_uri = ""
             for piece in thread:
-                ref = client.send_post(text=piece[:300],
+                if len(piece) > POST_LIMIT:
+                    return False, "", prefix_error(
+                        PERMANENT,
+                        f"thread item is {len(piece)} chars, over the {POST_LIMIT} limit",
+                    )
+                ref = client.send_post(text=piece,
                                        reply_to=parent)
                 if root is None:
                     root = ref
@@ -64,18 +72,26 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
         text = (fmt.get("text") or "").strip()
         if not text:
             return False, "", "bluesky_post.text empty"
+        if len(text) > POST_LIMIT:
+            return False, "", prefix_error(
+                PERMANENT, f"text is {len(text)} chars, over the {POST_LIMIT} limit")
 
         images = fmt.get("images") or []
         if images:
             embed_images = []
-            for img in images[:4]:
+            if len(images) > MAX_IMAGES:
+                return False, "", prefix_error(
+                    PERMANENT,
+                    f"images supports at most {MAX_IMAGES} items (got {len(images)})",
+                )
+            for img in images:
                 p = resolve_media_path(img["path"], strict_root=True)
                 uploaded = client.upload_blob(p.read_bytes())
                 embed_images.append({"image": uploaded.blob, "alt": img.get("alt", "")})
-            ref = client.send_images(text=text[:300], images_alt=[i["alt"] for i in embed_images],
+            ref = client.send_images(text=text, images_alt=[i["alt"] for i in embed_images],
                                      images=[p["image"] for p in embed_images])
         else:
-            ref = client.send_post(text=text[:300])
+            ref = client.send_post(text=text)
         return True, ref.uri, ""
     except Exception as e:  # noqa: BLE001
-        return False, "", f"bluesky error: {e}"
+        return False, "", prefix_error("retryable", f"bluesky error: {clip(e)}")
