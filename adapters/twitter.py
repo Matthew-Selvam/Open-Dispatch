@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import os
 
-from adapters.errors import PERMANENT, clip, prefix_error
+from adapters.errors import PERMANENT, PUBLISHED, clip, prefix_error
 from api.schema import ContentUnit
 from media.paths import resolve_media_path, MediaPathError
 
@@ -65,6 +65,7 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
         in_reply_to: str | None = None
         first_id = ""
         media_ids: list[str] = []
+        posted: list[str] = []
 
         media_paths = fmt.get("media_paths") or []
         if len(media_paths) > MAX_MEDIA:
@@ -88,9 +89,19 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
                 kwargs["media_ids"] = media_ids
             resp = client.create_tweet(**kwargs)
             tid = str(resp.data["id"])
+            posted.append(tid)
             if i == 0:
                 first_id = tid
             in_reply_to = tid
         return True, first_id, ""
     except Exception as e:  # noqa: BLE001
+        # If some tweets already went out, a plain retry would re-post them —
+        # a duplicate thread is worse than an incomplete one. Report it as
+        # `published` so the worker never retries, and name what did publish.
+        if posted:
+            return False, "", prefix_error(
+                PUBLISHED,
+                f"tweet {len(posted)}/{len(tweets)} published before failing "
+                f"(ids {', '.join(posted[:5])}); NOT retried to avoid duplicates: {clip(e)}",
+            )
         return False, "", prefix_error("retryable", f"twitter error: {clip(e)}")
