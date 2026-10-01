@@ -570,7 +570,7 @@ Full endpoint reference: [open-dispatch.vercel.app/api-reference](https://open-d
 
 ```bash
 pytest -q
-# 199 tests — schema, queue, API, media, and adapter coverage — no network, no real credentials
+# 210 tests — schema, queue, API, media, and adapter coverage — no network, no real credentials
 ```
 
 ---
@@ -592,11 +592,11 @@ pytest -q
 - [x] macOS menubar app + DMG
 - [x] **TikTok adapter** (Content Posting API v2 — PULL_FROM_URL)
 - [x] **Facebook adapter** (Meta Graph API v19 — text, photo, video)
+- [x] **Bulk CSV import** (`POST /dispatch/bulk` — 1 MiB cap, validated columns)
 - [x] **MCP server** (`mcp_server.py` — 10 tools, works with Claude Desktop, Cursor, any MCP client;
       compatible with mcp 1.x and 2.x)
 - [ ] Video transcoding (ffmpeg-backed)
 - [ ] Calendar view in dashboard
-- [ ] Bulk CSV import
 - [ ] Analytics (fetch engagement metrics per post)
 - [ ] PyPI publish
 

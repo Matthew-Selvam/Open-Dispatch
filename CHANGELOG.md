@@ -36,6 +36,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Per-row delete** and **bulk purge** (clear published / clear dead) in the dashboard.
 
 ### Fixed
+- **Retry backoff is now atomic with the status flip.** The worker used to call
+  `mark_failed()` (status -> `queued`) and then patch `scheduled_for` in a second write. In
+  that window the row was `queued` but still carried its original past `scheduled_for`, so a
+  second worker's `list_due()` saw it as immediately due and claimed it — the exponential
+  backoff was silently skipped, and the first worker's reschedule then landed on a row already
+  in `publishing`. `mark_failed()` now takes `retry_at` and applies status, attempts and
+  reschedule in one status-guarded write on all three backends.
+- **`mark_publishing()` now requires the row to actually be due**, not just `queued`. A worker
+  holding a row id from an earlier poll could otherwise claim a row that another worker had
+  since backed off to a future time. Guarded with `_row_due()` on JSONL/Redis and
+  `scheduled_for <= now()` in the Postgres UPDATE.
 - `POST /dispatch/bulk` returns 400 instead of 500 when a client sends a non-numeric
   `Content-Length` header.
 - `transcode_image`'s docstring now matches behavior: output is confined to the media root
