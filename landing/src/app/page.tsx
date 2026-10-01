@@ -6,8 +6,9 @@ import { ArrowUpRight, Check, ChevronRight, CircleDot, Code2, Layers3, LockKeyho
 
 const GITHUB = "https://github.com/Matthew-Selvam/Open-Dispatch";
 const DMG_URL  = "https://github.com/Matthew-Selvam/Open-Dispatch/releases/latest/download/Open-Dispatch-0.4.0.dmg";
-// TODO: replace with your actual Docker walkthrough video once uploaded
-const DOCKER_VIDEO_URL = "https://www.youtube.com/watch?v=TODO";
+// No demo video recorded yet — link to the Docker install docs rather than
+// shipping a placeholder URL that 404s.
+const DOCKER_VIDEO_URL = "https://github.com/Matthew-Selvam/Open-Dispatch#--docker-compose-zero-python-required";
 
 const PLATFORMS = [
   { name: "Twitter / X",    icon: "𝕏" },
@@ -191,7 +192,9 @@ const FAQS = [
       <>
         Once Open-Dispatch is running, the API is available at{" "}
         <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">http://localhost:8000</code>{" "}
-        with no auth required by default (it's designed for trusted self-hosting). Hit{" "}
+        with no auth required by default. It's built for trusted self-hosting, but if you expose the port beyond localhost, set{" "}
+        <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">OPEN_DISPATCH_API_TOKEN</code>{" "}first — it requires an Authorization header on every route except{" "}
+        <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">/healthz</code>. Hit{" "}
         <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">GET /healthz</code>{" "}
         to confirm it's live, then{" "}
         <code className="bg-[var(--color-bg)] px-1 rounded text-[10px]">POST /dispatch</code>{" "}
@@ -286,7 +289,7 @@ export default function Page() {
             <div>
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-xs font-mono text-[var(--color-body)]">
                 <span className="size-1.5 rounded-full bg-green-400 animate-pulse" />
-                v0.4.0 · MIT · 135 tests
+                v0.4.0 · MIT · 185 tests
               </div>
               <h1 className="font-sans text-5xl sm:text-[3.6rem] font-bold leading-[.94] tracking-[-.055em]">
                 One API to <span className="bg-gradient-to-r from-[#7138ff] via-[#d23cff] to-[#ff5f9e] bg-clip-text text-transparent">dispatch</span>
@@ -660,7 +663,7 @@ scheduler/worker.py
               </Link>
             </div>
             <p className="mt-8 text-xs text-[var(--color-muted)]">
-              135 tests · 7 platforms · 3 queue backends · 5 install methods
+              185 tests · 10 platform adapters · 3 queue backends · 5 install methods
             </p>
           </div>
         </section>

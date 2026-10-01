@@ -170,8 +170,13 @@ export default function ApiReferencePage() {
             <code className="bg-[var(--color-surface)] border border-[var(--color-border)] px-1.5 py-0.5 rounded text-xs">
               http://localhost:8000
             </code>
-            . No auth is required by default — it's designed for trusted self-hosting. Front it with{" "}
-            Cloudflare Access, Tailscale, or basic auth if you expose it to the internet.
+            . No auth is required by default — it's designed for trusted self-hosting. Before
+            exposing the port beyond localhost, set{" "}
+            <code className="text-[10px] bg-[var(--color-bg)] px-1 rounded">OPEN_DISPATCH_API_TOKEN</code>{" "}
+            and send an <code className="text-[10px] bg-[var(--color-bg)] px-1 rounded">Authorization: Bearer &lt;token&gt;</code>{" "}
+            header on every request except{" "}
+            <code className="text-[10px] bg-[var(--color-bg)] px-1 rounded">/healthz</code>. You can also
+            front it with Cloudflare Access, Tailscale, or basic auth.
           </p>
         </div>
 
