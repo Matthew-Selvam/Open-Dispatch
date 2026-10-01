@@ -59,7 +59,7 @@
       Ensure the directory is not world-readable.
     </p>
 
-    {% set platforms_order = ['twitter','bluesky','telegram','instagram','linkedin','threads','youtube'] %}
+    {% set platforms_order = ['twitter','bluesky','telegram','instagram','linkedin','threads','youtube','tiktok','facebook','discord'] %}
 
     {% for platform in platforms_order %}
       {% set fields = platform_cred_map[platform] %}
@@ -87,6 +87,16 @@
               placeholder="{{ env_var }}"
               autocomplete="new-password"
             />
+            {% if saved.get(field_name) %}
+            <label class="pf-clear" title="Delete the stored value for {{ env_var }}">
+              <input
+                type="checkbox"
+                name="{{ platform }}__{{ field_name }}__clear"
+                value="1"
+              />
+              remove stored value
+            </label>
+            {% endif %}
           </div>
           {% endfor %}
         </div>

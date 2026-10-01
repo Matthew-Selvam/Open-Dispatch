@@ -36,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Per-row delete** and **bulk purge** (clear published / clear dead) in the dashboard.
 
 ### Fixed
+- **Stored profile credentials can now be deleted.** The edit form renders credential inputs
+  empty (secrets are never sent to the browser) and only applied non-empty submissions, so a
+  stale token could never be removed through the UI — the only way to drop it was editing
+  `profiles.json` by hand. Added a per-field **remove stored value** checkbox.
+- **Profile form now covers all 10 platforms** — tiktok, facebook and discord were missing from
+  the credential form despite having adapters, so their credentials could not be set via the UI.
 - **Retry backoff is now atomic with the status flip.** The worker used to call
   `mark_failed()` (status -> `queued`) and then patch `scheduled_for` in a second write. In
   that window the row was `queued` but still carried its original past `scheduled_for`, so a
