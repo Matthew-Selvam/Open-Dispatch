@@ -36,6 +36,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Per-row delete** and **bulk purge** (clear published / clear dead) in the dashboard.
 
 ### Fixed
+- **Adapters no longer report success when a post did not publish.** Verified reproductions of the
+  pre-fix behavior:
+  - Telegram reports failure as HTTP 200 with `"ok": false`; the adapter never checked it, so a
+    chat-not-found returned success with an empty post id. The row was marked published, no failure
+    webhook fired, and the message was lost with no retry.
+  - Instagram returned `ok=True` when `media_publish` answered 200 with no `id`.
+  - LinkedIn posts with `lifecycleState: PUBLISHED`, so a 2xx means the post is live. A missing
+    `x-restli-id` header made the adapter call `.json()` on an empty 201 body, fail, and return
+    `ok=False` — so the worker retried and re-published the same post up to 3 times.
+  - TikTok returned `(True, publish_id, "")` when polling never reached a terminal state,
+    marking a video that never published as published. Its `publicaly_available_post_id` was also
+    indexed with `[0]`, so a bare-string response yielded the first *character* of the real post id.
+- **Bot tokens and access tokens no longer reach error strings or logs.** Telegram puts the token in
+  the URL path and Instagram put it in the query string; httpx logs every request at INFO with the
+  full URL, which the worker enables. Added `adapters/errors.py` with `redact()`/`clip()` and silenced
+  the httpx/httpcore/tweepy/atproto loggers in the worker.
+- **Retry classification.** Adapters now tag failures as `retryable`, `auth`, `permanent`, or
+  `published`. The worker dead-letters `auth` and `permanent` immediately instead of burning three
+  attempts and two backoffs on a bad token, and a `published` failure is never retried.
+- **An adapter that raises no longer strands its row.** The row stayed in `publishing` forever —
+  `list_due()` only returns `queued` rows and nothing reaped stuck claims — so the post was silently
+  lost. `run_once()` now converts any adapter exception into a recorded failure.
+- **YouTube upload is bounded and host-pinned.** The `Location` header from the resumable-session
+  response was PUT with the whole video and no timeout; it is now restricted to `*.googleapis.com`
+  over HTTPS, given a bounded timeout, and streamed instead of read into memory. An invalid
+  `privacy` value now fails instead of silently publishing publicly.
+- **Error bodies are no longer truncated below what the queue stores** — adapters cut at 200-400
+  while the queue keeps 500, losing the actionable tail of Meta and Google errors.
 - **Stored profile credentials can now be deleted.** The edit form renders credential inputs
   empty (secrets are never sent to the browser) and only applied non-empty submissions, so a
   stale token could never be removed through the UI — the only way to drop it was editing
