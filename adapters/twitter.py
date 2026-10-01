@@ -14,10 +14,13 @@ from __future__ import annotations
 import logging
 import os
 
+from adapters.errors import PERMANENT, PUBLISHED, clip, prefix_error
 from api.schema import ContentUnit
 from media.paths import resolve_media_path, MediaPathError
 
 log = logging.getLogger("open-dispatch.twitter")
+TWEET_LIMIT = 280
+MAX_MEDIA = 4
 
 
 def _tokens(account: str | None) -> tuple[str, str]:
@@ -44,6 +47,14 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
     except ImportError:
         return False, "", "tweepy not installed (pip install tweepy)"
 
+    for i, text in enumerate(tweets):
+        if len(text) > TWEET_LIMIT:
+            # text[:280] posted a broken mid-sentence tweet with no warning.
+            return False, "", prefix_error(
+                PERMANENT,
+                f"tweet {i + 1} is {len(text)} chars, over the {TWEET_LIMIT} limit",
+            )
+
     try:
         client = tweepy.Client(
             consumer_key=consumer_key,
@@ -54,27 +65,43 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
         in_reply_to: str | None = None
         first_id = ""
         media_ids: list[str] = []
+        posted: list[str] = []
 
         media_paths = fmt.get("media_paths") or []
+        if len(media_paths) > MAX_MEDIA:
+            return False, "", prefix_error(
+                PERMANENT,
+                f"media_paths supports at most {MAX_MEDIA} files (got {len(media_paths)})",
+            )
         if media_paths:
             api_v1 = tweepy.API(tweepy.OAuth1UserHandler(
                 consumer_key, consumer_secret, access_token, access_secret,
             ))
-            for path in media_paths[:4]:
+            for path in media_paths:
                 m = api_v1.media_upload(filename=str(resolve_media_path(path, strict_root=True)))
                 media_ids.append(str(m.media_id))
 
         for i, text in enumerate(tweets):
-            kwargs: dict = {"text": text[:280]}
+            kwargs: dict = {"text": text}
             if in_reply_to:
                 kwargs["in_reply_to_tweet_id"] = in_reply_to
             if i == 0 and media_ids:
                 kwargs["media_ids"] = media_ids
             resp = client.create_tweet(**kwargs)
             tid = str(resp.data["id"])
+            posted.append(tid)
             if i == 0:
                 first_id = tid
             in_reply_to = tid
         return True, first_id, ""
     except Exception as e:  # noqa: BLE001
-        return False, "", f"twitter error: {e}"
+        # If some tweets already went out, a plain retry would re-post them —
+        # a duplicate thread is worse than an incomplete one. Report it as
+        # `published` so the worker never retries, and name what did publish.
+        if posted:
+            return False, "", prefix_error(
+                PUBLISHED,
+                f"tweet {len(posted)}/{len(tweets)} published before failing "
+                f"(ids {', '.join(posted[:5])}); NOT retried to avoid duplicates: {clip(e)}",
+            )
+        return False, "", prefix_error("retryable", f"twitter error: {clip(e)}")

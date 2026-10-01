@@ -42,6 +42,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `profiles.json` by hand. Added a per-field **remove stored value** checkbox.
 - **Profile form now covers all 10 platforms** — tiktok, facebook and discord were missing from
   the credential form despite having adapters, so their credentials could not be set via the UI.
+
+- **Partial publishes are no longer retried into duplicates.** A Twitter thread where tweet 3 of 5
+  fails, a Bluesky reply chain that breaks midway, or a long Telegram message split into chunks where
+  chunk 2 fails: the earlier items are already live, but the adapter returned a plain retryable
+  failure, so the worker re-posted them on every attempt. These now report `published` with the
+  count of what did publish and the ids involved, so the row is marked published instead of
+  duplicated. A failure on the *first* item is still `retryable`, since nothing went out.
+  Telegram covers both mid-sequence failure shapes (HTTP 5xx via `raise_for_status()` and HTTP 200
+  with `ok: false`).
+- **A typo in `THREADS_SETTLE_SECONDS` silently lost the post.** `int("abc")` raised out of
+  `publish()`, and because `list_due()` only returns `queued` rows with no reaper for stuck claims,
+  the row stayed in `publishing` forever with `attempts=0` and no recorded error. The value is now
+  parsed defensively and clamped to 120s, so an unbounded value cannot stall the single-threaded
+  worker either. Reproduced before the fix: row stuck in `publishing`, invisible to `list_due()`.
+- **Over-length content is now rejected instead of silently truncated.** `text[:280]` on Twitter and
+  `[:300]` on Bluesky posted a broken mid-sentence fragment with no warning; `media_paths[:4]`,
+  `images[:4]` and `carousel[:10]` silently dropped the extras and published the post with the wrong
+  images. All now return a `permanent` error naming the limit. Length checks run before any SDK
+  client is constructed, so a bad request never spins up client objects.
+- **Threads catches `httpx.InvalidURL`, which is not an `httpx.HTTPError` subclass**, so a malformed
+  user id escaped the adapter's handlers and stranded the row the same way.
+- **Adapters no longer report success when a post did not publish.** Verified reproductions of the
+  pre-fix behavior:
+  - Telegram reports failure as HTTP 200 with `"ok": false`; the adapter never checked it, so a
+    chat-not-found returned success with an empty post id. The row was marked published, no failure
+    webhook fired, and the message was lost with no retry.
+  - Instagram returned `ok=True` when `media_publish` answered 200 with no `id`.
+  - LinkedIn posts with `lifecycleState: PUBLISHED`, so a 2xx means the post is live. A missing
+    `x-restli-id` header made the adapter call `.json()` on an empty 201 body, fail, and return
+    `ok=False` — so the worker retried and re-published the same post up to 3 times.
+  - TikTok returned `(True, publish_id, "")` when polling never reached a terminal state,
+    marking a video that never published as published. Its `publicaly_available_post_id` was also
+    indexed with `[0]`, so a bare-string response yielded the first *character* of the real post id.
+- **Bot tokens and access tokens no longer reach error strings or logs.** Telegram puts the token in
+  the URL path and Instagram put it in the query string; httpx logs every request at INFO with the
+  full URL, which the worker enables. Added `adapters/errors.py` with `redact()`/`clip()` and silenced
+  the httpx/httpcore/tweepy/atproto loggers in the worker.
+- **Retry classification.** Adapters now tag failures as `retryable`, `auth`, `permanent`, or
+  `published`. The worker dead-letters `auth` and `permanent` immediately instead of burning three
+  attempts and two backoffs on a bad token, and a `published` failure is never retried.
+- **An adapter that raises no longer strands its row.** The row stayed in `publishing` forever —
+  `list_due()` only returns `queued` rows and nothing reaped stuck claims — so the post was silently
+  lost. `run_once()` now converts any adapter exception into a recorded failure.
+- **YouTube upload is bounded and host-pinned.** The `Location` header from the resumable-session
+  response was PUT with the whole video and no timeout; it is now restricted to `*.googleapis.com`
+  over HTTPS, given a bounded timeout, and streamed instead of read into memory. An invalid
+  `privacy` value now fails instead of silently publishing publicly.
+- **Error bodies are no longer truncated below what the queue stores** — adapters cut at 200-400
+  while the queue keeps 500, losing the actionable tail of Meta and Google errors.
 - **Retry backoff is now atomic with the status flip.** The worker used to call
   `mark_failed()` (status -> `queued`) and then patch `scheduled_for` in a second write. In
   that window the row was `queued` but still carried its original past `scheduled_for`, so a

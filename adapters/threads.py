@@ -27,12 +27,16 @@ import time
 
 import httpx
 
+from adapters.errors import classify, clip, prefix_error
 from api.schema import ContentUnit
 
 log = logging.getLogger("open-dispatch.threads")
 
 GRAPH_BASE = "https://graph.threads.net/v1.0"
 PUBLISH_SETTLE_SECONDS = 30  # Meta recommends ~30s before calling threads_publish
+# Hard ceiling: the worker is single-threaded, so an unbounded sleep would stop
+# the whole queue draining for every platform.
+MAX_SETTLE_SECONDS = 120
 
 
 def _creds(account: str | None) -> tuple[str, str]:
@@ -72,10 +76,10 @@ def _create_container(
 
     try:
         r = client.post(f"{GRAPH_BASE}/{user_id}/threads", data=params, timeout=30)
-    except httpx.HTTPError as e:
+    except (httpx.HTTPError, httpx.InvalidURL) as e:
         return None, f"network error creating container: {e}"
     if r.status_code >= 400:
-        return None, f"create container HTTP {r.status_code}: {r.text[:200]}"
+        return None, prefix_error(classify(r.status_code), f"create container HTTP {r.status_code}: {clip(r.text)}")
     try:
         cid = r.json().get("id")
     except ValueError:
@@ -98,10 +102,10 @@ def _publish_container(
             data={"access_token": token, "creation_id": creation_id},
             timeout=30,
         )
-    except httpx.HTTPError as e:
+    except (httpx.HTTPError, httpx.InvalidURL) as e:
         return None, f"network error publishing: {e}"
     if r.status_code >= 400:
-        return None, f"publish HTTP {r.status_code}: {r.text[:200]}"
+        return None, prefix_error(classify(r.status_code), f"publish HTTP {r.status_code}: {clip(r.text)}")
     try:
         post_id = r.json().get("id")
     except ValueError:
@@ -124,7 +128,14 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
     if not (text or image_url or video_url):
         return False, "", "threads_post requires text, image_url, or video_url"
 
-    settle = int(os.getenv("THREADS_SETTLE_SECONDS", str(PUBLISH_SETTLE_SECONDS)))
+    # A typo here used to raise ValueError out of publish(), which left the row
+    # stuck in "publishing" forever (list_due() only returns "queued" rows and
+    # nothing reaps a stuck claim), silently losing the post. Clamp it.
+    try:
+        settle = int(os.getenv("THREADS_SETTLE_SECONDS", "") or PUBLISH_SETTLE_SECONDS)
+    except ValueError:
+        settle = PUBLISH_SETTLE_SECONDS
+    settle = max(0, min(settle, MAX_SETTLE_SECONDS))
 
     with httpx.Client() as client:
         creation_id, err = _create_container(
@@ -139,6 +150,7 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
         # cheap insurance.
         if settle > 0:
             time.sleep(settle if (image_url or video_url) else min(settle, 5))
+
 
         post_id, err = _publish_container(client, user_id, token, creation_id)
         if not post_id:

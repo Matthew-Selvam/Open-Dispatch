@@ -20,10 +20,12 @@ import time
 
 import httpx
 
+from adapters.errors import PERMANENT, classify, clip, prefix_error
 from api.schema import ContentUnit
 
 log = logging.getLogger("open-dispatch.instagram")
 GRAPH = "https://graph.facebook.com/v21.0"
+MAX_CAROUSEL_ITEMS = 10
 
 
 def _creds(account: str | None) -> tuple[str, str]:
@@ -37,15 +39,15 @@ def _wait_for_container(creation_id: str, token: str, timeout: int = 90) -> tupl
     deadline = time.time() + timeout
     while time.time() < deadline:
         r = httpx.get(f"{GRAPH}/{creation_id}",
-                      params={"fields": "status_code", "access_token": token},
+                      headers={"Authorization": f"Bearer {token}"},
                       timeout=15)
         if r.status_code >= 400:
-            return False, f"poll {r.status_code}: {r.text[:300]}"
+            return False, prefix_error(classify(r.status_code), f"poll: {clip(r.text)}")
         status = r.json().get("status_code")
         if status == "FINISHED":
             return True, ""
         if status == "ERROR":
-            return False, f"container ERROR: {r.text[:300]}"
+            return False, prefix_error("retryable", f"container ERROR: {clip(r.text)}")
         time.sleep(3)
     return False, "container poll timeout"
 
@@ -63,14 +65,22 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
 
     try:
         if carousel:
+            # Instagram allows at most 10 children. Slicing silently published
+            # the post with the wrong images and no error, so reject it instead.
+            if len(carousel) > MAX_CAROUSEL_ITEMS:
+                return False, "", prefix_error(
+                    PERMANENT,
+                    f"carousel_image_urls supports at most {MAX_CAROUSEL_ITEMS} items "
+                    f"(got {len(carousel)})",
+                )
             children: list[str] = []
-            for url in carousel[:10]:
+            for url in carousel:
                 r = httpx.post(f"{GRAPH}/{ig_user_id}/media",
                                data={"image_url": url, "is_carousel_item": "true",
                                      "access_token": token},
                                timeout=30)
                 if r.status_code >= 400:
-                    return False, "", f"carousel child: {r.status_code} {r.text[:300]}"
+                    return False, "", prefix_error(classify(r.status_code), f"carousel child: {clip(r.text)}")
                 children.append(r.json()["id"])
             r = httpx.post(f"{GRAPH}/{ig_user_id}/media",
                            data={"media_type": "CAROUSEL",
@@ -95,7 +105,7 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
             return False, "", "instagram_post needs image_url, video_url, or carousel_image_urls"
 
         if r.status_code >= 400:
-            return False, "", f"container: {r.status_code} {r.text[:300]}"
+            return False, "", prefix_error(classify(r.status_code), f"container: {clip(r.text)}")
         creation_id = r.json()["id"]
 
         ok, err = _wait_for_container(creation_id, token)
@@ -106,7 +116,15 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
                        data={"creation_id": creation_id, "access_token": token},
                        timeout=30)
         if r.status_code >= 400:
-            return False, "", f"publish: {r.status_code} {r.text[:300]}"
-        return True, str(r.json().get("id", "")), ""
+            return False, "", prefix_error(
+                classify(r.status_code), f"publish: {r.status_code} {clip(r.text)}")
+        # A 200 with no id means the media never got published. Returning
+        # ok=True here marked the row published with an empty post_id and
+        # fired a published webhook for a post that does not exist.
+        pid = r.json().get("id")
+        if not pid:
+            return False, "", prefix_error(
+                PERMANENT, f"media_publish 200 but no id in response: {clip(r.text)}")
+        return True, str(pid), ""
     except Exception as e:  # noqa: BLE001
         return False, "", f"instagram error: {e}"

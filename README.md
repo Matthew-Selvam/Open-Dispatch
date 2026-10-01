@@ -572,7 +572,7 @@ Full endpoint reference: [open-dispatch.vercel.app/api-reference](https://open-d
 
 ```bash
 pytest -q
-# 219 tests — schema, queue, API, media, and adapter coverage — no network, no real credentials
+# 307 tests — schema, queue, API, media, profiles, adapters, and docs coverage — no network, no real credentials
 ```
 
 ---

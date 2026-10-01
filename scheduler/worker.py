@@ -20,6 +20,7 @@ from pathlib import Path
 import httpx
 
 from adapters import ADAPTERS
+from adapters.errors import AUTH, PERMANENT, PUBLISHED, clip
 from api.queue import get_queue
 from api.schema import ContentUnit
 from profiles import ProfileStore, profile_env
@@ -32,6 +33,12 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+# httpx logs every request at INFO with the FULL URL. Telegram puts the bot
+# token in the URL path and Instagram put the access token in the query
+# string, so those lines wrote credentials into the log file. Verified:
+#   INFO httpx: HTTP Request: POST https://api.telegram.org/bot<TOKEN>/sendMessage
+for _noisy in ("httpx", "httpcore", "tweepy", "atproto"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 log = logging.getLogger("open-dispatch.worker")
 
 POLL_INTERVAL = int(os.getenv("WORKER_POLL_INTERVAL", "5"))
@@ -103,7 +110,15 @@ def run_once() -> int:
         if not q.mark_publishing(rid):
             log.info("skip %s: claim lost", rid)
             continue
-        ok, post_id, err = _publish(row)
+        try:
+            ok, post_id, err = _publish(row)
+        except Exception as e:  # noqa: BLE001
+            # An adapter that raises used to leave the row stuck in "publishing"
+            # forever: list_due() only returns "queued" rows and nothing reaps
+            # a stuck claim, so the post was silently lost. Any adapter
+            # exception must become a recorded failure.
+            log.exception("adapter raised for %s", rid)
+            ok, post_id, err = False, "", f"retryable: adapter raised {type(e).__name__}: {clip(e)}"
         webhook = (row.get("unit") or {}).get("webhook_url")
         if ok:
             log.info("✓ %s → %s", rid, post_id)
@@ -112,8 +127,23 @@ def run_once() -> int:
                 _fire_webhook(webhook, {"event": "published", "id": rid, "post_id": post_id,
                                         "platform": row["platform"]})
         else:
+            err = clip(err)
+            cls, _, detail = err.partition(": ")
+            # A post that went out but whose id we could not read must never be
+            # retried — that is how you get duplicate posts.
+            if cls == PUBLISHED:
+                log.error("✘ %s published but unconfirmed: %s", rid, detail)
+                committed = q.mark_published(rid, post_id or "")
+                if committed and webhook:
+                    _fire_webhook(webhook, {"event": "published", "id": rid,
+                                            "post_id": post_id, "unconfirmed": True,
+                                            "platform": row["platform"]})
+                continue
+            # Auth and permanent failures cannot succeed on retry; dead-letter
+            # immediately instead of burning two more attempts and backoffs.
+            non_retryable = cls in (AUTH, PERMANENT)
             attempts = int(row.get("attempts", 0)) + 1
-            dead = attempts >= MAX_ATTEMPTS
+            dead = non_retryable or attempts >= MAX_ATTEMPTS
             log.error("✘ %s (attempt %d): %s", rid, attempts, err)
             # Compute the backoff up front and hand it to mark_failed, so the
             # status flip and the reschedule land in one guarded write. Doing it
@@ -127,6 +157,8 @@ def run_once() -> int:
                 new_sf = datetime.now(tz=timezone.utc).timestamp() + backoff
                 retry_at = datetime.fromtimestamp(new_sf, tz=timezone.utc).isoformat()
             committed = q.mark_failed(rid, err, dead=dead, retry_at=retry_at)
+            if non_retryable:
+                log.error("  %s — not retryable, dead-lettered", cls)
             if committed and not dead:
                 log.info("  retry in %ds", backoff)
             if committed and webhook:

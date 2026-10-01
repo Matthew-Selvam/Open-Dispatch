@@ -78,7 +78,7 @@ class TestTelegramAdapter:
         from adapters import telegram
         monkeypatch.setattr(
             "adapters.telegram.httpx.post",
-            lambda *a, **k: FakeResponse(200, {"result": {"message_id": 42}}),
+            lambda *a, **k: FakeResponse(200, {"ok": True, "result": {"message_id": 42}}),
         )
         ok, pid, err = telegram.publish(_unit("telegram_message", {"text": "hello"}))
         assert ok is True
@@ -93,7 +93,7 @@ class TestTelegramAdapter:
 
         def fake_post(*a, **k):
             captured.append(k.get("data", {}))
-            return FakeResponse(200, {"result": {"message_id": 7}})
+            return FakeResponse(200, {"ok": True, "result": {"message_id": 7}})
 
         monkeypatch.setattr("adapters.telegram.httpx.post", fake_post)
         ok, pid, _ = telegram.publish(_unit("telegram_message", {"text": "x"}), account="broadcast")
@@ -404,7 +404,7 @@ class TestYouTubeAdapter:
                 if "oauth2.googleapis.com" in url:
                     return FakeResponse(200, {"access_token": "AT123"})
                 # Initiate upload
-                return FakeResponse(200, {}, headers={"location": "https://upload.session/url"})
+                return FakeResponse(200, {}, headers={"location": "https://www.googleapis.com/upload/session/v1?upload_id=X"})
 
             def put(self, url, **kw):
                 return FakeResponse(200, {"id": "vid_777"})
@@ -444,10 +444,18 @@ class TestYouTubeAdapter:
         meta = _build_metadata({"title": "x"})
         assert meta["status"]["privacyStatus"] == "public"
 
-    def test_invalid_privacy_falls_back(self):
+    def test_invalid_privacy_is_rejected_not_defaulted(self):
+        """Silently defaulting an unknown privacy to "public" is a visibility
+        escalation, so an unrecognised value must raise instead."""
+        from adapters.youtube import MetadataError, _build_metadata
+        with pytest.raises(MetadataError):
+            _build_metadata({"title": "x", "privacy": "topsecret"})
+
+    @pytest.mark.parametrize("value", ["public", "unlisted", "private"])
+    def test_valid_privacy_is_preserved(self, value):
         from adapters.youtube import _build_metadata
-        meta = _build_metadata({"title": "x", "privacy": "topsecret"})
-        assert meta["status"]["privacyStatus"] == "public"
+        meta = _build_metadata({"title": "x", "privacy": value})
+        assert meta["status"]["privacyStatus"] == value
 
 
 # ─── TikTok ─────────────────────────────────────────────────────────────
