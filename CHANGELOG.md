@@ -42,7 +42,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `profiles.json` by hand. Added a per-field **remove stored value** checkbox.
 - **Profile form now covers all 10 platforms** — tiktok, facebook and discord were missing from
   the credential form despite having adapters, so their credentials could not be set via the UI.
-
 - **Partial publishes are no longer retried into duplicates.** A Twitter thread where tweet 3 of 5
   fails, a Bluesky reply chain that breaks midway, or a long Telegram message split into chunks where
   chunk 2 fails: the earlier items are already live, but the adapter returned a plain retryable
@@ -91,6 +90,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `privacy` value now fails instead of silently publishing publicly.
 - **Error bodies are no longer truncated below what the queue stores** — adapters cut at 200-400
   while the queue keeps 500, losing the actionable tail of Meta and Google errors.
+
+- **`CREDENTIALS_GUIDE.html` now exists.** The README and the landing page both pointed at it as
+  the answer to "where do I get API keys", but the file was never committed — a 404 on the main
+  conversion path, with no equivalent elsewhere in the repo. Built it for all 10 platforms,
+  organised by where each credential is acquired rather than by variable name, with troubleshooting
+  and a security-notes section.
+- **Documented `OPEN_DISPATCH_MEDIA_DIR` in `.env.example`.** It is what enables media path
+  confinement (`media/paths.py` skips the `relative_to(root)` check when it is unset), so an
+  operator had no way to discover the one variable that turns a security control on.
 - **Retry backoff is now atomic with the status flip.** The worker used to call
   `mark_failed()` (status -> `queued`) and then patch `scheduled_for` in a second write. In
   that window the row was `queued` but still carried its original past `scheduled_for`, so a
