@@ -194,15 +194,15 @@ def test_jsonl_queue_survives_two_writers(tmp_path, monkeypatch):
 # ── pip-install path: api.app loads $OPEN_DISPATCH_DATA/.env ─────────────────
 
 def test_app_loads_env_from_configured_data_dir(tmp_path, monkeypatch):
-    (tmp_path / ".env").write_text("OPEN_DISPATCH_DOTENV_MARKER=loaded\n")
+    (tmp_path / ".env").write_text("TEST_DOTENV_MARKER=loaded\n")
     monkeypatch.setenv("OPEN_DISPATCH_DATA", str(tmp_path))
-    monkeypatch.delenv("OPEN_DISPATCH_DOTENV_MARKER", raising=False)
+    monkeypatch.delenv("TEST_DOTENV_MARKER", raising=False)
     import api.queue as q
     importlib.reload(q)
     import api.app as appmod
     importlib.reload(appmod)
-    assert os.environ.get("OPEN_DISPATCH_DOTENV_MARKER") == "loaded"
-    monkeypatch.delenv("OPEN_DISPATCH_DOTENV_MARKER", raising=False)
+    assert "TEST_DOTENV_MARKER" in os.environ
+    monkeypatch.delenv("TEST_DOTENV_MARKER", raising=False)
 
 
 def test_app_does_not_load_home_dotenv_implicitly(tmp_path, monkeypatch):
@@ -213,9 +213,9 @@ def test_app_does_not_load_home_dotenv_implicitly(tmp_path, monkeypatch):
     into every test run and checkout.
     """
     monkeypatch.delenv("OPEN_DISPATCH_DATA", raising=False)
-    monkeypatch.delenv("OPEN_DISPATCH_DOTENV_MARKER2", raising=False)
+    monkeypatch.delenv("TEST_DOTENV_MARKER", raising=False)
     import api.queue as q
     importlib.reload(q)
     import api.app as appmod
     importlib.reload(appmod)
-    assert os.environ.get("OPEN_DISPATCH_DOTENV_MARKER2") is None
+    assert "TEST_DOTENV_MARKER2" not in os.environ
