@@ -35,7 +35,7 @@ curl -X POST http://localhost:8000/dispatch \
   }'
 ```
 
-Or use the built-in dark dashboard at `http://localhost:8000/` — compose, schedule, retry, watch the queue live.
+Or use the built-in dark dashboard at `http://localhost:8000/` — compose, schedule, retry, watch the queue live. Selecting **YouTube** in the composer reveals video fields (media-dir file path, optional title, visibility); the caption becomes the description.
 
 ---
 

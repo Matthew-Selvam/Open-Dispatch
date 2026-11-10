@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **YouTube compose support in the web dashboard** — selecting YouTube in the composer now shows
+  video fields (media-dir file path, optional title, visibility) instead of silently failing at
+  the worker. The caption becomes the description. A complete `youtube_short` entry in the
+  Advanced JSON box still wins.
 - **`dispatch doctor`** — one command that diagnoses a self-hosted install: which data dir and
   `.env` it reads, the queue backend in effect, every platform's missing credential env vars
   (from `.env` merged with the shell environment — shell wins, values never printed), stored

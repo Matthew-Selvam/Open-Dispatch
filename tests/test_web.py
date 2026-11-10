@@ -139,3 +139,64 @@ def test_retry_api_returns_json(client):
     r = client.post(f"/queue/{row_id}/retry", headers={"Accept": "application/json"})
     assert r.status_code == 200
     assert r.json()["status"] == "queued"
+
+
+def test_compose_submit_youtube_requires_video_path(client):
+    """YouTube cannot ride the shared-text path — missing video must error at compose time."""
+    r = client.post(
+        "/_compose",
+        data={"text": "hello world", "platforms": ["youtube"]},
+        headers={"Accept": "text/html"},
+    )
+    assert r.status_code == 200
+    assert "video" in r.text.lower()
+    rows = client.get("/queue").json()["rows"]
+    assert not any(r2["platform"].startswith("youtube") for r2 in rows)
+
+
+def test_compose_submit_youtube_builds_youtube_short(client):
+    r = client.post(
+        "/_compose",
+        data={
+            "text": "shipped a thing",
+            "platforms": ["youtube", "telegram"],
+            "youtube_video_path": "clips/demo.mp4",
+            "youtube_title": "Demo",
+            "youtube_privacy": "unlisted",
+        },
+        headers={"Accept": "text/html"},
+    )
+    assert r.status_code == 200
+    rows = client.get("/queue").json()["rows"]
+    yt = next(r2 for r2 in rows if r2["platform"] == "youtube:default")
+    fmt = yt["unit"]["formats"]["youtube_short"]
+    assert fmt["video_path"] == "clips/demo.mp4"
+    assert fmt["title"] == "Demo"
+    assert fmt["privacy"] == "unlisted"
+    # caption still becomes the description via the adapter default
+    assert yt["unit"]["formats"]["telegram_message"]["text"] == "shipped a thing"
+
+
+def test_compose_submit_youtube_json_overrides_fields(client):
+    """A complete youtube_short in Advanced JSON wins over the simple fields."""
+    r = client.post(
+        "/_compose",
+        data={
+            "text": "shipped a thing",
+            "platforms": ["youtube"],
+            "formats_json": '{"youtube_short": {"video_path": "clips/from-json.mp4"}}',
+            "youtube_video_path": "",
+        },
+        headers={"Accept": "text/html"},
+    )
+    assert r.status_code == 200
+    rows = client.get("/queue").json()["rows"]
+    fmt = rows[0]["unit"]["formats"]["youtube_short"]
+    assert fmt["video_path"] == "clips/from-json.mp4"
+
+
+def test_compose_page_has_youtube_fields(client):
+    r = client.get("/compose", headers={"Accept": "text/html"})
+    assert r.status_code == 200
+    assert 'id="youtube-fields"' in r.text
+    assert 'name="youtube_video_path"' in r.text

@@ -528,6 +528,9 @@ async def compose_submit(
     scheduled_for: str = Form(""),
     webhook_url: str = Form(""),
     formats_json: str = Form(""),
+    youtube_video_path: str = Form(""),
+    youtube_title: str = Form(""),
+    youtube_privacy: str = Form(""),
 ) -> HTMLResponse:
     errors: list[str] = []
     targets: list[str] = [p for p in platforms if p]
@@ -542,6 +545,30 @@ async def compose_submit(
     except ValueError as e:
         errors.append(str(e))
         formats = {}
+
+    # YouTube cannot ride the shared-text path: the adapter needs a video file.
+    # Build youtube_short from the dedicated fields unless Advanced JSON already
+    # carries a complete youtube_short entry.
+    if not errors:
+        youtube_selected = any(t.split(":")[0] == "youtube" for t in targets)
+        existing = formats.get("youtube_short") if isinstance(formats, dict) else None
+        if youtube_selected and not (
+            isinstance(existing, dict) and (existing.get("video_path") or "").strip()
+        ):
+            video = youtube_video_path.strip()
+            if not video:
+                errors.append(
+                    "youtube needs a video file — set a media-dir path in the "
+                    "YouTube fields, or include youtube_short.video_path in the JSON"
+                )
+            else:
+                yf: dict[str, Any] = {"video_path": video}
+                if youtube_title.strip():
+                    yf["title"] = youtube_title.strip()
+                privacy = youtube_privacy.strip().lower()
+                if privacy and privacy != "public":
+                    yf["privacy"] = privacy
+                formats["youtube_short"] = yf
 
     if errors:
         return templates.TemplateResponse(
