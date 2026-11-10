@@ -20,7 +20,9 @@ warn()    { echo "${YELLOW}⚠${RESET} $*"; }
 error()   { echo "${RED}✗${RESET} $*" >&2; exit 1; }
 
 # ── defaults ──────────────────────────────────────────────────────────────────
-PREFIX="${PREFIX:-/usr/local}"
+# Default to ~/.local so a plain `curl | bash` never needs sudo — README and
+# INSTALL_METHODS document this as the default.
+PREFIX="${PREFIX:-${HOME}/.local}"
 VERSION="${OPEN_DISPATCH_VERSION:-v0.4.0}"
 INSTALL_DIR="${INSTALL_DIR:-${PREFIX}/opt/open-dispatch}"
 DATA_DIR="${DATA_DIR:-${HOME}/.open-dispatch}"
@@ -29,12 +31,17 @@ INSTALL_SERVICE=true
 # ── argument parsing ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --prefix)     PREFIX="$2";       INSTALL_DIR="${PREFIX}/opt/open-dispatch"; shift 2 ;;
-    --version)    VERSION="$2";      shift 2 ;;
-    --data-dir)   DATA_DIR="$2";     shift 2 ;;
+    --prefix=*)     PREFIX="${1#*=}"; INSTALL_DIR="${PREFIX}/opt/open-dispatch"; shift ;;
+    --prefix)       [[ $# -ge 2 ]] || error "--prefix requires a directory"; PREFIX="$2"; INSTALL_DIR="${PREFIX}/opt/open-dispatch"; shift 2 ;;
+    --install-dir=*) INSTALL_DIR="${1#*=}"; shift ;;
+    --install-dir)  [[ $# -ge 2 ]] || error "--install-dir requires a directory"; INSTALL_DIR="$2"; shift 2 ;;
+    --version=*)    VERSION="${1#*=}"; shift ;;
+    --version)      [[ $# -ge 2 ]] || error "--version requires a tag"; VERSION="$2"; shift 2 ;;
+    --data-dir=*)   DATA_DIR="${1#*=}"; shift ;;
+    --data-dir)     [[ $# -ge 2 ]] || error "--data-dir requires a directory"; DATA_DIR="$2"; shift 2 ;;
     --no-service) INSTALL_SERVICE=false; shift ;;
     --help|-h)
-      echo "Usage: install.sh [--prefix DIR] [--version TAG] [--data-dir DIR] [--no-service]"
+      echo "Usage: install.sh [--prefix DIR] [--install-dir DIR] [--version TAG] [--data-dir DIR] [--no-service]"
       exit 0
       ;;
     *) error "Unknown option: $1" ;;
@@ -56,7 +63,7 @@ OS=$(uname -s)
 
 # Python — prefer python3.12, python3.11, then python3
 PYTHON=""
-for candidate in python3.12 python3.11 python3; do
+for candidate in python3.14 python3.13 python3.12 python3.11 python3; do
   if command -v "$candidate" &>/dev/null; then
     PY_VER=$("$candidate" -c 'import sys; print(sys.version_info[:2])' 2>/dev/null)
     if [[ "$PY_VER" == "(3, 11)" || "$PY_VER" == "(3, 12)" || "$PY_VER" =~ ^\(3,\ 1[3-9]\)$ ]]; then
@@ -73,6 +80,18 @@ if [[ -z "$PYTHON" ]]; then
        Fedora/RHEL: sudo dnf install python3.12"
 fi
 
+# Fail early with a targeted message when the venv module is missing
+# (Debian splits it into python3.X-venv) instead of an opaque traceback later.
+if ! "$PYTHON" -c 'import venv' 2>/dev/null; then
+  error "Python venv module is missing (Debian/Ubuntu: sudo apt install python3.12-venv)."
+fi
+
+# Fail before creating anything when the prefix is not writable — a plain
+# `curl | bash` runs unprivileged, and /usr/local needs sudo.
+if [[ ! -w "$PREFIX" && ! -w "$(dirname "$PREFIX")" ]]; then
+  error "Cannot write to ${PREFIX} - re-run with --prefix \"$HOME/.local\" (the default) or use sudo."
+fi
+
 info "Using Python: $($PYTHON --version)"
 
 # curl or wget
@@ -85,12 +104,14 @@ else
 fi
 
 # ── download ──────────────────────────────────────────────────────────────────
-TARBALL_URL="https://github.com/Matthew-Selvam/Open-Dispatch/archive/refs/tags/${VERSION}.tar.gz"
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 info "Downloading Open-Dispatch ${VERSION} …"
-$FETCH "$TARBALL_URL" | tar -xz -C "$TMP_DIR" --strip-components=1
+if ! $FETCH "https://github.com/Matthew-Selvam/Open-Dispatch/archive/refs/tags/${VERSION}.tar.gz" | tar -xz -C "$TMP_DIR" --strip-components=1; then
+  info "Tag ${VERSION} not found - trying a branch of that name …"
+  $FETCH "https://github.com/Matthew-Selvam/Open-Dispatch/archive/refs/heads/${VERSION}.tar.gz" | tar -xz -C "$TMP_DIR" --strip-components=1
+fi
 
 # ── install ───────────────────────────────────────────────────────────────────
 info "Installing to ${INSTALL_DIR} …"
@@ -121,26 +142,33 @@ write_script() {
 
 write_script "${PREFIX}/bin/dispatch" <<SCRIPT
 #!/usr/bin/env bash
+if [ -f "${DATA_DIR}/.env" ]; then
+  set -o allexport; source "${DATA_DIR}/.env"; set +o allexport
+fi
+# The wrapper owns the data dir - it wins over any value inside .env, so the
+# CLI and the server always agree on where the queue lives.
 export OPEN_DISPATCH_DATA="${DATA_DIR}"
 exec "${VENV}/bin/python" "${INSTALL_DIR}/cli.py" "\$@"
 SCRIPT
 
 write_script "${PREFIX}/bin/open-dispatch" <<SCRIPT
 #!/usr/bin/env bash
-export OPEN_DISPATCH_DATA="${DATA_DIR}"
 if [ -f "${DATA_DIR}/.env" ]; then
   set -o allexport; source "${DATA_DIR}/.env"; set +o allexport
 fi
+# The wrapper owns the data dir - it wins over any value inside .env.
+export OPEN_DISPATCH_DATA="${DATA_DIR}"
 cd "${INSTALL_DIR}"
 exec "${VENV}/bin/uvicorn" api.app:app --host "\${HOST:-127.0.0.1}" --port "\${PORT:-8000}" "\$@"
 SCRIPT
 
 write_script "${PREFIX}/bin/open-dispatch-worker" <<SCRIPT
 #!/usr/bin/env bash
-export OPEN_DISPATCH_DATA="${DATA_DIR}"
 if [ -f "${DATA_DIR}/.env" ]; then
   set -o allexport; source "${DATA_DIR}/.env"; set +o allexport
 fi
+# The wrapper owns the data dir - it wins over any value inside .env.
+export OPEN_DISPATCH_DATA="${DATA_DIR}"
 cd "${INSTALL_DIR}"
 exec "${VENV}/bin/python" -m scheduler.worker "\$@"
 SCRIPT
@@ -165,9 +193,9 @@ if [[ "$OS" == "Darwin" && "$INSTALL_SERVICE" == "true" ]]; then
     <string>${PREFIX}/bin/open-dispatch</string>
   </array>
   <key>RunAtLoad</key>
-  <false/>
+  <true/>
   <key>KeepAlive</key>
-  <false/>
+  <true/>
   <key>StandardOutPath</key>
   <string>${DATA_DIR}/server.log</string>
   <key>StandardErrorPath</key>
@@ -183,9 +211,39 @@ if [[ "$OS" == "Darwin" && "$INSTALL_SERVICE" == "true" ]]; then
 </plist>
 PLIST
 
-  success "Created launchd plist: ${PLIST}"
-  info  "  Start server automatically at login: launchctl load ${PLIST}"
-  info  "  Start right now:                     launchctl start dev.open-dispatch"
+  cat > "${PLIST_DIR}/dev.open-dispatch.worker.plist" <<WPLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>dev.open-dispatch.worker</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${PREFIX}/bin/open-dispatch-worker</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${DATA_DIR}/worker.log</string>
+  <key>StandardErrorPath</key>
+  <string>${DATA_DIR}/worker-error.log</string>
+  <key>WorkingDirectory</key>
+  <string>${DATA_DIR}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OPEN_DISPATCH_DATA</key>
+    <string>${DATA_DIR}</string>
+  </dict>
+</dict>
+</plist>
+WPLIST
+
+  success "Created launchd plists: ${PLIST} + dev.open-dispatch.worker.plist"
+  info  "  Start both at login:  launchctl bootstrap gui/$(id -u) ${PLIST_DIR}"
+  info  "  (or right now:        launchctl load ${PLIST} ${PLIST_DIR}/dev.open-dispatch.worker.plist)"
 fi
 
 # ── systemd service (Linux) ────────────────────────────────────────────────────
@@ -210,8 +268,25 @@ RestartSec=5
 WantedBy=default.target
 UNIT
 
-  success "Created systemd unit: ${SERVICE_DIR}/open-dispatch.service"
-  info  "  Enable + start: systemctl --user enable --now open-dispatch"
+  cat > "${SERVICE_DIR}/open-dispatch-worker.service" <<WUNIT
+[Unit]
+Description=Open-Dispatch scheduler worker
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${PREFIX}/bin/open-dispatch-worker
+WorkingDirectory=${DATA_DIR}
+Environment="OPEN_DISPATCH_DATA=${DATA_DIR}"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+WUNIT
+
+  success "Created systemd units: open-dispatch.service + open-dispatch-worker.service"
+  info  "  Enable + start both: systemctl --user enable --now open-dispatch open-dispatch-worker"
 fi
 
 # ── final instructions ─────────────────────────────────────────────────────────
@@ -220,9 +295,11 @@ echo "${BOLD}  ✓ Open-Dispatch ${VERSION} installed successfully!${RESET}"
 echo ""
 echo "  Next steps:"
 echo "    1. Edit credentials:   \$EDITOR ${DATA_DIR}/.env"
-echo "    2. Start server:       open-dispatch"
-echo "    3. Open dashboard:     open http://localhost:8000   (macOS)"
-echo "    4. Post via CLI:       dispatch send --platforms bluesky --text 'hello'"
+echo "    2. Start server:       open-dispatch        (auto-starts at login if service installed)"
+echo "    3. Start worker:       open-dispatch-worker (auto-starts at login if service installed)"
+echo "    4. Open dashboard:     open http://localhost:8000   (macOS)"
+echo "    5. Post via CLI:       dispatch send --platforms bluesky --text 'hello'"
+echo "    6. Check health:       dispatch doctor"
 echo ""
 echo "  More info: https://open-dispatch-landing.vercel.app"
 echo ""

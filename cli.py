@@ -321,16 +321,39 @@ def main() -> int:
     return args.func(args)
 
 
+def _load_env_fallback() -> None:
+    """Entry-point fallback: load ~/.open-dispatch/.env when nothing else did.
+
+    Shell wrappers and Docker source/export the env file themselves; the raw
+    pip entry points (`open-dispatch`, `open-dispatch-worker`) don't, so
+    without this a pip install shows a dashboard with every platform
+    "missing credentials" and no error. Only fires when OPEN_DISPATCH_DATA is
+    unset — a configured data dir's .env is loaded by api.app / the worker
+    themselves. override=False keeps real environment variables winning.
+    """
+    from dotenv import load_dotenv
+    if not os.getenv("OPEN_DISPATCH_DATA"):
+        load_dotenv(Path.home() / ".open-dispatch" / ".env", override=False)
+
+
 def server() -> None:
     """Entry point for `open-dispatch` — start the API + web UI server."""
+    import argparse
     import uvicorn
-    port = int(os.environ.get("PORT", "8000"))
-    host = os.environ.get("HOST", "0.0.0.0")
-    uvicorn.run("api.app:app", host=host, port=port)
+    _load_env_fallback()
+    parser = argparse.ArgumentParser(prog="open-dispatch",
+                                     description="Open-Dispatch API + web UI server")
+    # Bind loopback by default: the pip entry point used to bind 0.0.0.0 with
+    # auth off, exposing the dashboard and credential CRUD to the network.
+    parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")))
+    args, _ = parser.parse_known_args()
+    uvicorn.run("api.app:app", host=args.host, port=args.port)
 
 
 def worker() -> None:
     """Entry point for `open-dispatch-worker` — run the scheduler worker."""
+    _load_env_fallback()
     from scheduler.worker import main as worker_main
     raise SystemExit(worker_main())
 

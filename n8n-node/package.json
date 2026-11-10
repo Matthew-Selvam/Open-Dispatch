@@ -1,7 +1,7 @@
 {
   "name": "n8n-nodes-open-dispatch",
   "version": "0.1.0",
-  "description": "n8n community node for Open-Dispatch — dispatch content to Twitter, Bluesky, Telegram, Instagram, LinkedIn, Threads via one API call.",
+  "description": "n8n community node for Open-Dispatch \u2014 dispatch content to Twitter, Bluesky, Telegram, Instagram, LinkedIn, Threads via one API call.",
   "keywords": [
     "n8n-community-node-package",
     "open-dispatch",
@@ -31,7 +31,8 @@
   "scripts": {
     "build": "tsc && cp nodes/OpenDispatch/opendispatch.svg dist/nodes/OpenDispatch/",
     "dev": "tsc --watch",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "prepare": "npm run build"
   },
   "files": [
     "index.js",

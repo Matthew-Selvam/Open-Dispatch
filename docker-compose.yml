@@ -4,11 +4,15 @@ services:
     container_name: open-dispatch-api
     restart: unless-stopped
     env_file: .env
+    # Pin the data dir in the container environment: it must not be shadowed
+    # by a stray OPEN_DISPATCH_DATA line in .env, or api and worker each get
+    # their own queue and the ./data volume is never used.
+    environment:
+      - OPEN_DISPATCH_DATA=/data
     ports:
       - "8000:8000"
     volumes:
       - ./data:/data
-    command: ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8000"]
     # No `depends_on: redis` — Redis is opt-in via REDIS_URL.
 
   worker:
@@ -16,10 +20,13 @@ services:
     container_name: open-dispatch-worker
     restart: unless-stopped
     env_file: .env
+    environment:
+      - OPEN_DISPATCH_DATA=/data
     volumes:
       - ./data:/data
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     command: ["python", "-m", "scheduler.worker"]
 
   # Optional — only used when REDIS_URL points here in .env.
@@ -29,8 +36,11 @@ services:
     container_name: open-dispatch-redis
     restart: unless-stopped
     profiles: ["redis"]
-    ports:
-      - "6379:6379"
+    # Not published to the host: only api and worker reach it over the
+    # compose network, and the default redis image has no auth.
     volumes:
-      - ./data/redis:/data
+      - redis-data:/data
     command: ["redis-server", "--appendonly", "yes"]
+
+volumes:
+  redis-data:

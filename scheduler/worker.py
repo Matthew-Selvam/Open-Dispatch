@@ -17,6 +17,12 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Same .env contract as api.app: only an explicitly configured data dir is
+# honored, and the process environment always wins (see api/app.py).
+if os.getenv("OPEN_DISPATCH_DATA"):
+    from dotenv import load_dotenv
+    load_dotenv(Path(os.environ["OPEN_DISPATCH_DATA"]).expanduser() / ".env", override=False)
+
 import httpx
 
 from adapters import ADAPTERS
@@ -77,23 +83,54 @@ def _publish(row: dict) -> tuple[bool, str, str]:
         return adapter.publish(unit, account)
 
 
-def _safe_webhook_url(url: str) -> bool:
+def _validated_webhook_target(url: str) -> tuple[str, str] | None:
+    """Resolve the webhook host once and apply the egress policy.
+
+    Returns (ip, port) to connect to, or None when the URL fails policy.
+
+    Resolving here and connecting to the *validated* address closes the
+    DNS-rebinding window: validating the hostname and then letting httpx
+    resolve it again lets an attacker-controlled authoritative nameserver
+    answer the check with a public IP and the actual connection with
+    169.254.169.254 or 127.0.0.1 (TTL 0), exfiltrating publish events and
+    error strings to internal services.
+    """
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.hostname:
-        return False
+        return None
     try:
-        addresses = {ipaddress.ip_address(info[4][0]) for info in socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)}
+        infos = socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)
     except (OSError, ValueError):
-        return False
-    return bool(addresses) and all(not (a.is_private or a.is_loopback or a.is_link_local or a.is_reserved or a.is_unspecified or a.is_multicast) for a in addresses)
+        return None
+    addresses = {ipaddress.ip_address(info[4][0]) for info in infos}
+    if not addresses or any(
+        a.is_private or a.is_loopback or a.is_link_local or a.is_reserved or a.is_unspecified or a.is_multicast
+        for a in addresses
+    ):
+        return None
+    ip = sorted(addresses, key=lambda a: (a.version, str(a)))[0]
+    return str(ip), str(parsed.port or 443)
 
 
 def _fire_webhook(url: str, payload: dict) -> None:
-    if not _safe_webhook_url(url):
+    target = _validated_webhook_target(url)
+    if target is None:
         log.warning("webhook rejected by egress policy")
         return
+    ip, port = target
+    parsed = urlparse(url)
+    host = parsed.hostname
+    # Connect to the address we validated, while TLS SNI, the Host header and
+    # certificate verification stay pinned to the real hostname. If this
+    # httpx build cannot pin SNI, fail closed rather than resolve again.
+    pinned = f"https://{ip}:{port}{parsed.path}"
+    if parsed.query:
+        pinned += f"?{parsed.query}"
     try:
-        httpx.post(url, json=payload, timeout=10, follow_redirects=False)
+        httpx.post(pinned, json=payload, timeout=10, follow_redirects=False,
+                   headers={"Host": host}, extensions={"sni_hostname": host})
+    except TypeError:
+        log.warning("webhook not sent: httpx build lacks sni_hostname pinning; refusing unpinned connection")
     except Exception as e:  # noqa: BLE001
         log.warning("webhook failed: %s", e)
 

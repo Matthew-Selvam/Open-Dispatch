@@ -12,6 +12,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+# Load $OPEN_DISPATCH_DATA/.env so a pip install + `uvicorn api.app:app` works
+# without the shell wrappers (install.sh/Docker source or export the file
+# themselves). Only an explicitly configured data dir is honored: silently
+# falling back to ~/.open-dispatch here would leak a developer's real
+# credentials into test runs and checkouts. override=False keeps the process
+# environment winning, matching the wrappers' behavior. The data dir itself
+# must come from the environment — a var pointing at the data dir can't
+# sensibly live inside that data dir.
+if os.getenv("OPEN_DISPATCH_DATA"):
+    from dotenv import load_dotenv
+    load_dotenv(Path(os.environ["OPEN_DISPATCH_DATA"]).expanduser() / ".env", override=False)
+
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -77,7 +89,13 @@ def _authorized(request: Request) -> bool:
 
 @app.middleware("http")
 async def security_middleware(request: Request, call_next):
-    if request.url.path != "/healthz" and not _authorized(request):
+    # /healthz stays open only for non-HTML probes (curl, load balancers,
+    # `dispatch doctor`). The HTML variant renders the full status dashboard
+    # including per-row adapter errors, so when a token is configured it must
+    # authenticate like every other page — an anonymous visitor must never
+    # see more than an authenticated API client.
+    exempt = request.url.path == "/healthz" and not _wants_html(request)
+    if not exempt and not _authorized(request):
         return JSONResponse({"detail": "authentication required"}, status_code=401,
                             headers={"WWW-Authenticate": "Bearer"})
     if request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.headers.get("origin"):
@@ -623,9 +641,14 @@ async def row_detail(request: Request, row_id: str) -> Any:
     wants_html = _wants_html(request)
     if not row:
         if wants_html:
+            # row_id came from the URL path and is interpolated outside Jinja
+            # here — it must be escaped or a crafted link like
+            # /queue/%3Cimg%20src=x%20onerror=...%3E becomes reflected XSS in
+            # the dashboard's origin (which can purge the queue and edit
+            # credential profiles).
             return HTMLResponse(
                 "<h1>404 — row not found</h1>"
-                f"<p>No queue row with id <code>{row_id}</code>.</p>"
+                f"<p>No queue row with id <code>{html.escape(row_id)}</code>.</p>"
                 "<p><a href='/'>Back to dashboard</a></p>",
                 status_code=404,
             )
@@ -792,7 +815,11 @@ def api_profiles_list() -> list[dict]:
 
 def _profile_from_form(form: Any, profile_id: str | None = None) -> Profile:
     """Build a Profile from a submitted HTML form."""
-    pid = profile_id or str(form.get("id", "")).strip() or None
+    # On create, ignore a client-supplied id: ProfileStore.save replaces a
+    # profile with the same id, so trusting form["id"] let a crafted create
+    # request silently overwrite an existing profile's credentials. The edit
+    # form is unaffected — its path parameter wins below.
+    pid = profile_id or None
     existing = ProfileStore().get(profile_id) if profile_id else None
     platforms: dict[str, dict[str, str]] = {
         p: dict(creds) for p, creds in (existing.platforms.items() if existing else [])

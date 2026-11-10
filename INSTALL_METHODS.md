@@ -11,7 +11,7 @@ git clone https://github.com/Matthew-Selvam/Open-Dispatch
 cd Open-Dispatch
 cp .env.example .env    # fill in your platform creds
 docker compose up -d
-curl http://localhost:8000/healthz   # → {"status":"ok"}
+curl -s http://localhost:8000/healthz | jq -e '.status=="ok"'
 open http://localhost:8000
 ```
 
@@ -28,8 +28,8 @@ brew install open-dispatch
 
 # First-time setup
 cp $(brew --prefix)/opt/open-dispatch/.env.example \
-   ~/.open-dispatch/.env
-$EDITOR ~/.open-dispatch/.env
+   $(brew --prefix)/var/open-dispatch/.env
+$EDITOR $(brew --prefix)/var/open-dispatch/.env
 
 # Start server
 open-dispatch                        # foreground
@@ -61,8 +61,9 @@ bash install.sh
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--prefix DIR` | `/usr/local` | Where to install binaries |
-| `--version TAG` | `v0.4.0` | Release to install |
+| `--prefix DIR` | `~/.local` | Base prefix; binaries land in `$PREFIX/bin`, app in `$PREFIX/opt/open-dispatch` |
+| `--install-dir DIR` | `$PREFIX/opt/open-dispatch` | Install the app itself at this exact path |
+| `--version TAG` | `v0.4.0` | Release tag (or branch name) to install |
 | `--data-dir DIR` | `~/.open-dispatch` | Where to store queue + .env |
 | `--no-service` | — | Skip launchd/systemd unit setup |
 
@@ -110,20 +111,22 @@ bash scripts/make-dmg.sh
 ## 5. pip install (Python developers)
 
 ```bash
-pip install open-dispatch            # installs `dispatch` CLI + all deps
-# or
-pip install "open-dispatch[redis]"   # + redis queue backend
-pip install "open-dispatch[postgres]" # + postgres queue backend
+pip install "open-dispatch @ git+https://github.com/Matthew-Selvam/Open-Dispatch.git"
+# optional queue backends:
+pip install "open-dispatch[redis] @ git+https://github.com/Matthew-Selvam/Open-Dispatch.git"
+pip install "open-dispatch[postgres] @ git+https://github.com/Matthew-Selvam/Open-Dispatch.git"
 ```
 
-Then run manually:
+The entry points load `~/.open-dispatch/.env` automatically; or point
+`OPEN_DISPATCH_DATA` at a directory containing a `.env` (both are read with
+the process environment taking precedence). Then run:
 
 ```bash
-# Server
-uvicorn api.app:app --reload
+# Server (binds 127.0.0.1 by default; --host/--port to override)
+open-dispatch
 
 # Worker (separate terminal)
-python -m scheduler.worker
+open-dispatch-worker
 
 # CLI
 dispatch send --platforms telegram --text "hello"

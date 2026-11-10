@@ -18,3 +18,8 @@ docs/site
 .coverage
 .coverage.*
 htmlcov
+landing/node_modules
+landing/.next
+dist/
+*.dmg
+macos-app/**/build

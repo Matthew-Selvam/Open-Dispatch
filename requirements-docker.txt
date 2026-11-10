@@ -1,0 +1,5 @@
+# Extra queue backends for the Docker image — the compose redis profile is a
+# no-op without the redis client installed, and DATABASE_URL without psycopg2.
+# Keep this file's contents in sync with pyproject's [redis] and [postgres] extras.
+redis>=5.0
+psycopg2-binary>=2.9

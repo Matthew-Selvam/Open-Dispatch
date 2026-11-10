@@ -31,18 +31,58 @@ import logging
 import os
 import threading
 import uuid
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Protocol
+from typing import Any, Iterable, Iterator, Protocol
 
 log = logging.getLogger("open-dispatch.queue")
 
+try:
+    import fcntl as _fcntl  # noqa: F401  (POSIX)
+except ImportError:  # pragma: no cover — Windows has no flock
+    _fcntl = None
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.getenv("OPEN_DISPATCH_DATA", REPO_ROOT / "data"))
-DATA_DIR.mkdir(parents=True, exist_ok=True)
 JSONL_PATH = DATA_DIR / "queue.jsonl"
 
-_LOCK = threading.Lock()
+_LOCK = threading.RLock()
+
+
+def _ensure_data_dir() -> None:
+    """Create the data dir on first use, not at import time.
+
+    Import-time mkdir meant a pip install created `site-packages/data` merely
+    by importing the module — which fails outright when site-packages is
+    root-owned — and left a stray directory on unrelated imports.
+    """
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@contextmanager
+def _exclusive() -> Iterator[None]:
+    """Hold the in-process lock AND an exclusive cross-process flock.
+
+    The JSONL backend is documented single-process, but the default
+    docker-compose runs api + worker as two processes sharing one volume.
+    Without the flock, the worker's whole-file rewrite (tmp + replace) can
+    land between the API's read and its replace, silently dropping rows the
+    API appended in that window. All mutating entry points go through here;
+    read-only paths accept the (already repaired) torn-line risk.
+    """
+    with _LOCK:
+        if _fcntl is None:  # pragma: no cover
+            yield
+            return
+        _ensure_data_dir()
+        lock_path = JSONL_PATH.with_suffix(".jsonl.lock")
+        with lock_path.open("w") as lf:
+            _fcntl.flock(lf.fileno(), _fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                _fcntl.flock(lf.fileno(), _fcntl.LOCK_UN)
 
 
 def _now() -> str:
@@ -108,6 +148,7 @@ def _read_all() -> list[dict]:
 
 
 def _write_all(rows: Iterable[dict]) -> None:
+    _ensure_data_dir()
     tmp = JSONL_PATH.with_suffix(".jsonl.tmp")
     with tmp.open("w") as f:
         for r in rows:
@@ -116,11 +157,18 @@ def _write_all(rows: Iterable[dict]) -> None:
 
 
 class JsonlQueue:
-    """Single-process JSONL queue. Suitable for self-host MVP."""
+    """JSONL queue on disk — zero infrastructure.
+
+    Safe for the common self-host shape (one api + one worker sharing a
+    data dir): every mutating operation holds a cross-process flock, so the
+    worker's whole-file rewrite can no longer drop rows the api appended
+    concurrently. For many workers or multi-host, use Redis or Postgres.
+    """
 
     def enqueue(self, unit_dict: dict, platform_key: str, scheduled_for: str) -> str:
         row = _new_row(unit_dict, platform_key, scheduled_for)
-        with _LOCK:
+        _ensure_data_dir()
+        with _exclusive():
             # If the file doesn't end with a newline (torn write from a crash),
             # start a fresh line — otherwise this row concatenates onto the
             # corrupt one and BOTH become unreadable.
@@ -136,14 +184,14 @@ class JsonlQueue:
         return row["id"]
 
     def list_all(self, status: str | None = None) -> list[dict]:
-        with _LOCK:
+        with _exclusive():
             rows = _read_all()
         if status:
             rows = [r for r in rows if r["status"] == status]
         return rows
 
     def get(self, row_id: str) -> dict | None:
-        with _LOCK:
+        with _exclusive():
             for r in _read_all():
                 if r["id"] == row_id:
                     return r
@@ -151,14 +199,14 @@ class JsonlQueue:
 
     def list_due(self, now_iso: str) -> list[dict]:
         due_epoch = _iso_to_epoch(now_iso)
-        with _LOCK:
+        with _exclusive():
             return [
                 r for r in _read_all()
                 if r["status"] == "queued" and _row_due(r, due_epoch)
             ]
 
     def _update(self, row_id: str, patch: dict[str, Any]) -> None:
-        with _LOCK:
+        with _exclusive():
             rows = _read_all()
             for r in rows:
                 if r["id"] == row_id:
@@ -174,7 +222,7 @@ class JsonlQueue:
         check, a worker holding an id from an earlier list_due() can claim a
         row that another worker has since backed off to a future time.
         """
-        with _LOCK:
+        with _exclusive():
             rows = _read_all()
             due_epoch = _iso_to_epoch(_now())
             for r in rows:
@@ -186,7 +234,7 @@ class JsonlQueue:
         return False
 
     def mark_published(self, row_id: str, post_id: str) -> bool:
-        with _LOCK:
+        with _exclusive():
             rows = _read_all()
             for r in rows:
                 if r["id"] == row_id and r.get("status") in {"queued", "publishing"}:
@@ -197,7 +245,7 @@ class JsonlQueue:
 
     def mark_failed(self, row_id: str, err: str, dead: bool = False,
                     retry_at: str | None = None) -> bool:
-        with _LOCK:
+        with _exclusive():
             rows = _read_all()
             for r in rows:
                 if r["id"] == row_id and r.get("status") in {"queued", "publishing"}:
@@ -215,7 +263,7 @@ class JsonlQueue:
         return False
 
     def retry(self, row_id: str) -> bool:
-        with _LOCK:
+        with _exclusive():
             rows = _read_all()
             for r in rows:
                 if r["id"] == row_id and r.get("status") in {"queued", "failed", "dead"}:
@@ -225,7 +273,7 @@ class JsonlQueue:
         return False
 
     def delete(self, row_id: str) -> bool:
-        with _LOCK:
+        with _exclusive():
             rows = _read_all()
             new = [r for r in rows if r["id"] != row_id]
             if len(new) == len(rows):
@@ -240,7 +288,7 @@ class JsonlQueue:
         left alone — cancel is best-effort before the post goes live.
         """
         canceled: list[dict] = []
-        with _LOCK:
+        with _exclusive():
             rows = _read_all()
             for r in rows:
                 if (r.get("unit") or {}).get("id") == unit_id and r["status"] == "queued":
@@ -550,7 +598,11 @@ class PostgresQueue:
         self._ensure_schema()
 
     def _conn(self):
-        return self._conn_factory()
+        # closing() matters: `with conn` commits/rolls back but does NOT close
+        # the connection, so every operation here relied on refcount
+        # finalization to reap the socket (connection leak + full TCP/auth
+        # handshake per operation).
+        return closing(self._conn_factory())
 
     def _ensure_schema(self) -> None:
         ddl = f"""

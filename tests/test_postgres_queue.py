@@ -43,6 +43,12 @@ class FakeConn:
     def __init__(self) -> None:
         self.executions: list[tuple[str, tuple]] = []
         self.cursor_result: list[tuple] = []
+        self.closed = False
+
+    def close(self) -> None:
+        # Queue._conn wraps connections in contextlib.closing; the stub must
+        # tolerate that like a real psycopg2 connection does.
+        self.closed = True
 
     def cursor(self) -> FakeCursor:
         c = FakeCursor(self)

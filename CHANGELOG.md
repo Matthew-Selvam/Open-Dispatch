@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Security hardening (subagent review round).**
+  - Reflected XSS in the row-detail 404 page: the raw `row_id` from the URL was interpolated
+    into a hand-built HTML f-string outside Jinja's autoescape. Now escaped.
+  - `/healthz` auth split: with `OPEN_DISPATCH_API_TOKEN` set, the JSON probe stays open for
+    monitors/`dispatch doctor`, but the HTML health dashboard (which includes per-row adapter
+    errors) now requires the bearer token like every other page.
+  - Webhook egress closes its DNS-rebinding window: the worker resolves the webhook host once,
+    validates every address is public, then connects to the validated IP with TLS SNI, the Host
+    header and certificate verification pinned to the real hostname. If the httpx build cannot
+    pin SNI it fails closed rather than re-resolving. Enqueue-time validation now also rejects
+    decimal-IP and hex-IP encodings (`https://2130706433/`).
+  - `POST /profiles` (create) ignores a client-supplied `id` — it previously replaced any
+    existing profile with the same id, silently overwriting that profile's credentials.
+  - The `open-dispatch` pip entry point binds `127.0.0.1` by default (was `0.0.0.0` with auth
+    off) and accepts `--host/--port`.
+  - ProfileStore creates `profiles.json` atomically at mode 0600 from first write.
+- **Docker compose actually works now.** `.env.example` shipped an active
+  `OPEN_DISPATCH_DATA=./data` line that shadowed the volume path inside containers, so api and
+  worker each got their own queue on `/app/data`, the `./data` volume was never used, and the
+  default `docker compose up -d` never published anything. The line is gone (documented as
+  shell/service-environment-only), both services pin `OPEN_DISPATCH_DATA=/data`, and the redis
+  profile now works: the image installs the redis/psycopg2 clients (`requirements-docker.txt`),
+  redis data moved to a named volume, and 6379 is no longer published to the host.
+- **JSONL queue is safe for the default two-process compose.** Every mutating operation now
+  holds a cross-process `flock`, so the worker's whole-file rewrite can no longer drop rows the
+  API appended concurrently. The data dir is also created lazily (importing the module no longer
+  mkdirs `site-packages/data` under pip installs).
+- **pip installs load `.env` now.** `api.app` and the worker load `$OPEN_DISPATCH_DATA/.env`
+  (process env wins); the pip entry points fall back to `~/.open-dispatch/.env`. Homebrew:
+  `.env.example` is actually installed (dotfiles were skipped by `Dir["*"]`), and the docs
+  point at the real brew data dir (`$(brew --prefix)/var/open-dispatch/.env`).
+- **install.sh: sudo-free by default and less surprising.** Default prefix is `~/.local`
+  (matching the docs) with a writability pre-flight, both `--flag value` and `--flag=value`
+  parsing, `--install-dir`, a branch fallback when the tag doesn't exist, a targeted venv-module
+  error, launchd jobs that actually start at login (`RunAtLoad`/`KeepAlive` true), a second
+  plist/unit for the worker (previously installed but never started), the CLI wrapper loading
+  `.env` like the server wrapper, and wrapper-owned `OPEN_DISPATCH_DATA` that can no longer be
+  shadowed from `.env`. n8n: `prepare` builds `dist/` on publish so the package can never ship
+  without it.
+
 ### Added
 - **YouTube compose support in the web dashboard** — selecting YouTube in the composer now shows
   video fields (media-dir file path, optional title, visibility) instead of silently failing at

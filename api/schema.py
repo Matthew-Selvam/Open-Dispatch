@@ -45,6 +45,11 @@ def _validate_webhook_url(value: str | None) -> str | None:
     host = parsed.hostname.lower().rstrip(".")
     if host in {"localhost", "localhost.localdomain"}:
         return "webhook_url host is not allowed"
+    # Non-canonical IP encodings: `ipaddress` won't parse decimal/hex forms,
+    # so 2130706433 (= 127.0.0.1) or 0x7f000001 would pass as an ordinary
+    # hostname and slip past the private-address check below.
+    if host.replace(".", "").isdigit() or host.startswith("0x"):
+        return "webhook_url host is not allowed"
     try:
         address = ipaddress.ip_address(host)
     except ValueError:

@@ -77,7 +77,7 @@ brew tap matthew-selvam/open-dispatch \
 brew install open-dispatch
 
 # Set up credentials
-$EDITOR ~/.open-dispatch/.env
+$EDITOR $(brew --prefix)/var/open-dispatch/.env
 
 # Start the server (foreground)
 open-dispatch
@@ -99,7 +99,7 @@ curl -fsSL \
   | bash
 
 # Set up credentials
-$EDITOR ~/.open-dispatch/.env
+$EDITOR $(brew --prefix)/var/open-dispatch/.env
 
 # Start the server
 open-dispatch
@@ -135,7 +135,7 @@ cp .env.example .env   # fill in your platform credentials
 docker compose up -d
 
 # Verify
-curl http://localhost:8000/healthz   # → {"status":"ok"}
+curl -s http://localhost:8000/healthz | jq -e '.status=="ok"'
 
 # Open the dashboard
 open http://localhost:8000
@@ -259,14 +259,17 @@ required for anything beyond a local, firewalled bind.
 OPEN_DISPATCH_API_TOKEN=$(openssl rand -hex 32)
 ```
 
-With the token set, every route except `/healthz` (kept open for Docker health
-checks and uptime monitors) requires:
+With the token set, every route except the `/healthz` JSON probe (kept open
+for Docker health checks, uptime monitors, and `dispatch doctor`) requires:
 
 ```
 Authorization: Bearer <your token>
 ```
 
-Requests without a valid token get `401`.
+Requests without a valid token get `401`. Note this includes the browser
+dashboard: a browser cannot send the bearer header, so a token-protected
+instance is API-only unless you front it with a proxy that injects auth.
+Keep the dashboard token-free on a loopback-only bind instead.
 
 All three bundled clients send it automatically once the variable is set in
 > their environment:
@@ -306,7 +309,7 @@ Dark terminal aesthetic. HTMX-driven (no JS build step). 51 KB vendored `htmx.mi
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/healthz` | Liveness probe — JSON for monitors, HTML dashboard for browsers |
+| GET | `/healthz` | Liveness probe — JSON diagnostics for monitors/curl (open), full HTML dashboard for browsers (auth-gated when a token is set) |
 | POST | `/dispatch` | Enqueue a ContentUnit for one or many platforms |
 | GET | `/queue?status=…` | List rows (`queued / publishing / published / failed / dead / canceled`) |
 | GET | `/campaign/{unit_id}` | Show every platform row for one dispatch |
