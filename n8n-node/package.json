@@ -34,6 +34,7 @@
     "clean": "rm -rf dist"
   },
   "files": [
+    "index.js",
     "dist"
   ],
   "n8n": {
