@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`dispatch doctor`** — one command that diagnoses a self-hosted install: which data dir and
+  `.env` it reads, the queue backend in effect, every platform's missing credential env vars
+  (from `.env` merged with the shell environment — shell wins, values never printed), stored
+  profiles and which platforms each has configured, plus server reachability, worker liveness,
+  and queue shape when the API is up. Exits 1 when no platform is fully configured, so scripts
+  can detect a half-set-up install. The `/healthz` JSON now carries the low-sensitivity subset
+  the doctor needs (backend, worker, counts, configured platforms) instead of only
+  `{status, version}`.
 - **CLI and MCP server authenticate against a secured instance** — both now read
   `OPEN_DISPATCH_API_TOKEN` and send it as a bearer header, so they no longer 401 when the
   server requires auth. The CLI also takes `--token`. A 401/403 from either client now names the
@@ -36,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Per-row delete** and **bulk purge** (clear published / clear dead) in the dashboard.
 
 ### Fixed
+- **Worker liveness now respects `OPEN_DISPATCH_DATA`.** The health page located the heartbeat
+  at `<repo>/data/.worker_heartbeat` regardless of configuration, so under Docker (`/data`) or
+  install.sh/homebrew (`~/.open-dispatch`) a healthy worker was permanently reported as
+  "not running". The lookup now uses the same data dir the worker writes to.
 - **Stored profile credentials can now be deleted.** The edit form renders credential inputs
   empty (secrets are never sent to the browser) and only applied non-empty submissions, so a
   stale token could never be removed through the UI — the only way to drop it was editing

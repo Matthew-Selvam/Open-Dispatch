@@ -28,6 +28,7 @@ from profiles import (
     PLATFORM_CRED_MAP,
     PLATFORM_EMOJI,
     PRESET_COLORS,
+    REQUIRED_ENV_VARS,
     Profile,
     ProfileStore,
 )
@@ -93,21 +94,9 @@ async def security_middleware(request: Request, call_next):
 
 
 def _platforms_configured() -> set[str]:
-    """Which platforms have at least the canonical credential env var set?"""
-    checks = {
-        "telegram":  ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"),
-        "twitter":   ("TWITTER_API_KEY", "TWITTER_ACCESS_TOKEN"),
-        "instagram": ("IG_USER_ID", "IG_TOKEN"),
-        "bluesky":   ("BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD"),
-        "linkedin":  ("LINKEDIN_ACCESS_TOKEN", "LINKEDIN_AUTHOR_URN"),
-        "threads":   ("THREADS_USER_ID", "THREADS_ACCESS_TOKEN"),
-        "youtube":   ("YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"),
-        "tiktok":    ("TIKTOK_ACCESS_TOKEN",),
-        "facebook":  ("FACEBOOK_PAGE_ID", "FACEBOOK_ACCESS_TOKEN"),
-        "discord":   ("DISCORD_WEBHOOK_URL",),
-    }
+    """Which platforms have all the required credential env vars set?"""
     return {
-        platform for platform, envs in checks.items()
+        platform for platform, envs in REQUIRED_ENV_VARS.items()
         if all(os.getenv(e) for e in envs)
     }
 
@@ -190,11 +179,17 @@ def _queue_backend_name() -> str:
 def _worker_status() -> dict[str, Any]:
     """Read the worker heartbeat file and report liveness.
 
-    The worker writes REPO_ROOT/data/.worker_heartbeat (ISO timestamp)
+    The worker writes $OPEN_DISPATCH_DATA/.worker_heartbeat (ISO timestamp)
     on every poll loop.  If the file is missing or stale (> 3× poll
     interval), the worker is not running.
+
+    The path must come from the same env var the worker uses: when the data
+    dir moves (Docker sets /data, install.sh uses ~/.open-dispatch) a
+    repo-relative path would silently never find the heartbeat and the
+    health page would report a live worker as "not running".
     """
-    heartbeat_path = REPO_ROOT / "data" / ".worker_heartbeat"
+    data_dir = Path(os.getenv("OPEN_DISPATCH_DATA", REPO_ROOT / "data"))
+    heartbeat_path = data_dir / ".worker_heartbeat"
     poll_interval = int(os.getenv("WORKER_POLL_INTERVAL", "5"))
     stale_threshold = poll_interval * 3  # ≈ 15s by default
 
@@ -276,10 +271,26 @@ def _healthz_context() -> dict[str, Any]:
 
 @app.get("/healthz")
 def healthz(request: Request) -> Any:
-    """JSON for monitors/curl; HTML status dashboard for browsers."""
+    """JSON for monitors/curl; HTML status dashboard for browsers.
+
+    The JSON body carries the low-sensitivity subset of the health context
+    (worker liveness, queue shape, configured platforms) so load balancers,
+    scripts, and `dispatch doctor` can diagnose without screen-scraping
+    HTML. Per-row errors and platform breakdowns stay HTML-only.
+    """
     if _wants_html(request):
         return templates.TemplateResponse(request, "health.html", _healthz_context())
-    return JSONResponse({"status": "ok", "version": VERSION})
+    ctx = _healthz_context()
+    return JSONResponse({
+        "status": "ok",
+        "version": VERSION,
+        "backend": ctx["backend"],
+        "worker": ctx["worker"],
+        "total": ctx["total"],
+        "counts": ctx["counts"],
+        "failed_count": ctx["failed_count"],
+        "configured_platforms": ctx["configured_platforms"],
+    })
 
 
 @app.post("/dispatch", status_code=202)

@@ -168,6 +168,117 @@ def cmd_quick_test(args: argparse.Namespace) -> int:
     return 1
 
 
+# ── doctor ────────────────────────────────────────────────────────────────────
+
+def _doctor_env(data_dir: Path) -> dict[str, str]:
+    """Effective env: process environment overlaid on the data-dir .env file.
+
+    Precedence mirrors the server (load_dotenv does not override existing
+    env vars): a var set in the shell wins over one in .env. Never returns
+    values — callers print var names only, never secrets.
+    """
+    from dotenv import dotenv_values
+
+    env_path = data_dir / ".env"
+    file_vals = dotenv_values(env_path) if env_path.exists() else {}
+    merged = {k: (v or "") for k, v in file_vals.items()}
+    for key, value in os.environ.items():
+        if value:
+            merged[key] = value
+    return merged
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Diagnose this install: data dir, credentials, profiles, server, worker."""
+    from profiles import PLATFORM_CRED_MAP, REQUIRED_ENV_VARS
+
+    data_dir = Path(os.environ.get("OPEN_DISPATCH_DATA") or (Path.home() / ".open-dispatch")).expanduser()
+    env = _doctor_env(data_dir)
+    env_path = data_dir / ".env"
+
+    print("Environment")
+    if env_path.exists():
+        print(f"  ✓ data dir   {data_dir}")
+        print(f"  ✓ .env found {env_path}")
+    else:
+        print(f"  ⚠ data dir   {data_dir}")
+        print(f"  ⚠ no .env    expected at {env_path} (env vars may still be set)")
+
+    # Queue backend, same precedence as api.queue.get_queue
+    if env.get("DATABASE_URL"):
+        backend = "postgres"
+    elif env.get("REDIS_URL"):
+        backend = "redis"
+    else:
+        backend = "jsonl"
+    print(f"  ✓ queue      {backend}")
+
+    media_dir = Path(env.get("OPEN_DISPATCH_MEDIA_DIR") or (data_dir / "media")).expanduser()
+    if media_dir.exists() and os.access(media_dir, os.W_OK):
+        print(f"  ✓ media dir  {media_dir}")
+    else:
+        print(f"  ⚠ media dir  {media_dir} (missing or not writable)")
+    print()
+
+    print("Platforms (default account; per-account overrides use _<ACCT> suffixes)")
+    configured_any = False
+    for platform, required in REQUIRED_ENV_VARS.items():
+        missing = [name for name in required if not env.get(name, "").strip()]
+        if missing:
+            print(f"  ✗ {platform:<10} missing: {', '.join(missing)}")
+        else:
+            configured_any = True
+            print(f"  ✓ {platform:<10} {', '.join(required)}")
+    print()
+
+    profiles_path = data_dir / "profiles.json"
+    if profiles_path.exists():
+        print("Profiles")
+        try:
+            raw = json.loads(profiles_path.read_text())
+            profiles = raw.get("profiles", [])
+            if not profiles:
+                print("  (empty)")
+            for p in profiles:
+                creds = p.get("platforms") or {}
+                active = [
+                    plat for plat, fields in creds.items()
+                    if any(str(v).strip() for v in (fields or {}).values())
+                    and plat in PLATFORM_CRED_MAP
+                ]
+                label = f"{p.get('emoji', '🎭')} {p.get('name') or p.get('id', '?')}"
+                print(f"  {label:<14} {', '.join(sorted(active)) or 'no credentials'}")
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"  ⚠ unreadable profiles.json: {e}")
+        print()
+
+    print(f"Server ({args.url})")
+    try:
+        r = httpx.get(f"{args.url}/healthz", headers=_auth_headers(args.token), timeout=5)
+        if r.status_code in (401, 403):
+            print("  ⚠ reachable but requires auth — pass --token or set OPEN_DISPATCH_API_TOKEN")
+        else:
+            r.raise_for_status()
+            h = r.json()
+            worker = h.get("worker") or {}
+            counts = h.get("counts") or {}
+            print(f"  ✓ API v{h.get('version', '?')} backend={h.get('backend', '?')} "
+                  f"rows={h.get('total', 0)} failed={h.get('failed_count', 0)}")
+            print(f"  {'✓' if worker.get('running') else '⚠'} worker     {worker.get('label', '?')}")
+            if counts:
+                summary = ", ".join(f"{k}={v}" for k, v in counts.items() if v)
+                print(f"  queue       {summary or 'empty'}")
+    except (httpx.HTTPError, ValueError):
+        print("  ⚠ not reachable — start it with `open-dispatch` (or check --url)")
+    print()
+
+    if not configured_any:
+        print("✘ No platform is fully configured.")
+        print(f"  Edit {env_path} (copy from .env.example) or export the env vars above.")
+        return 1
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="dispatch", description="Open-Dispatch CLI")
     p.add_argument("--url", default=DEFAULT_URL, help="Open-Dispatch API base URL")
@@ -199,6 +310,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     t = sub.add_parser("quick-test", help="Send a Telegram ping")
     t.set_defaults(func=cmd_quick_test)
+
+    d = sub.add_parser("doctor", help="Diagnose this install: credentials, data dir, server, worker")
+    d.set_defaults(func=cmd_doctor)
     return p
 
 

@@ -95,6 +95,23 @@ PASSWORD_FIELDS = {
     "webhook_url",
 }
 
+# Env vars each platform needs before it counts as "configured".
+# Single source of truth for the dashboard's configured-platforms check,
+# the compose form, and `dispatch doctor`.
+# Per-account overrides use the same vars with an _<ACCT> suffix.
+REQUIRED_ENV_VARS: dict[str, tuple[str, ...]] = {
+    "telegram":  ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"),
+    "twitter":   ("TWITTER_API_KEY", "TWITTER_ACCESS_TOKEN"),
+    "instagram": ("IG_USER_ID", "IG_TOKEN"),
+    "bluesky":   ("BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD"),
+    "linkedin":  ("LINKEDIN_ACCESS_TOKEN", "LINKEDIN_AUTHOR_URN"),
+    "threads":   ("THREADS_USER_ID", "THREADS_ACCESS_TOKEN"),
+    "youtube":   ("YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"),
+    "tiktok":    ("TIKTOK_ACCESS_TOKEN",),
+    "facebook":  ("FACEBOOK_PAGE_ID", "FACEBOOK_ACCESS_TOKEN"),
+    "discord":   ("DISCORD_WEBHOOK_URL",),
+}
+
 # Nice emoji per platform
 PLATFORM_EMOJI: dict[str, str] = {
     "twitter":   "𝕏",

@@ -41,6 +41,17 @@ def test_healthz(client):
     assert r.json()["status"] == "ok"
 
 
+def test_healthz_json_includes_worker_and_backend(client):
+    """The JSON body carries the diagnostics `dispatch doctor` (and monitors) need."""
+    r = client.get("/healthz")
+    assert r.status_code == 200
+    body = r.json()
+    assert "backend" in body
+    assert body["worker"]["running"] is False  # no worker in the test process
+    assert "configured_platforms" in body
+    assert "counts" in body and "failed_count" in body
+
+
 def test_platforms_configured_covers_new_adapters(client, monkeypatch):
     """Health dashboard + composer dots must recognize tiktok/facebook/discord creds."""
     from api import app as appmod

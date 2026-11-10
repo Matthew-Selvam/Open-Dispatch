@@ -377,6 +377,11 @@ dispatch worker
 
 # Quick connectivity test (Telegram ping)
 dispatch quick-test
+
+# Diagnose this install: data dir, per-platform credentials, profiles,
+# server reachability, worker liveness
+# (global flags go before the subcommand: dispatch --url … doctor)
+dispatch doctor
 ```
 
 ---
