@@ -16,7 +16,7 @@ import logging
 import os
 from pathlib import Path
 
-from adapters.errors import PERMANENT, PUBLISHED, clip, prefix_error
+from adapters.errors import AUTH, PERMANENT, PUBLISHED, RETRYABLE, clip, prefix_error
 from api.schema import ContentUnit
 from media.paths import resolve_media_path
 
@@ -44,11 +44,14 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
         return False, "", "atproto not installed (pip install atproto)"
 
     try:
+        # `posted` must exist before login can fail: the except handler below
+        # reads it, and login runs first. (An UnboundLocalError inside the
+        # handler used to mask the real auth error.)
+        posted = 0
         client = Client()
         client.login(handle, password)
 
         thread = fmt.get("thread") or []
-        posted = 0
         if thread:
             parent = None
             root = None
@@ -105,4 +108,14 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
                 f"bluesky: {posted}/{len(thread)} posts published before failing, "
                 f"NOT retried to avoid duplicates: {clip(e)}",
             )
-        return False, "", prefix_error("retryable", f"bluesky error: {clip(e)}")
+        # Exception-type classification: a bad app password used to be
+        # retried twice before dead-lettering.
+        try:
+            from atproto_client.exceptions import RateLimitExceededError, UnauthorizedError
+        except ImportError:  # pragma: no cover — atproto ships both names
+            UnauthorizedError = RateLimitExceededError = ()
+        if isinstance(e, UnauthorizedError):
+            return False, "", prefix_error(AUTH, f"bluesky login failed: {clip(e)}")
+        if isinstance(e, RateLimitExceededError):
+            return False, "", prefix_error(RETRYABLE, f"bluesky rate limited: {clip(e)}")
+        return False, "", prefix_error(RETRYABLE, f"bluesky error: {clip(e)}")

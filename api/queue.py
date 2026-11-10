@@ -124,6 +124,17 @@ class QueueProtocol(Protocol):
     def retry(self, row_id: str) -> bool: ...
     def delete(self, row_id: str) -> bool: ...
     def cancel_campaign(self, unit_id: str) -> list[dict]: ...
+
+    def reap_stale_publishing(self, lease_seconds: int) -> list[str]:
+        """Re-queue rows stuck in "publishing" older than the lease.
+
+        A hard crash mid-publish (SIGKILL, OOM, power loss) cannot be caught
+        by the worker's try/except, so the row would sit in "publishing"
+        forever — and retry() only accepts queued/failed/dead, so it could not
+        even be re-queued by hand. Returns the re-queued row ids.
+        """
+        ...
+
     def _update(self, row_id: str, patch: dict[str, Any]) -> None: ...
 
 
@@ -298,6 +309,28 @@ class JsonlQueue:
             if canceled:
                 _write_all(rows)
         return canceled
+
+
+    def reap_stale_publishing(self, lease_seconds: int) -> list[str]:
+        now_epoch = _iso_to_epoch(_now())
+        reaped: list[str] = []
+        with _exclusive():
+            rows = _read_all()
+            for r in rows:
+                if r.get("status") != "publishing":
+                    continue
+                try:
+                    age = now_epoch - _iso_to_epoch(r.get("updated_at", ""))
+                except (ValueError, TypeError):
+                    age = lease_seconds + 1  # unparseable timestamp: reap
+                if age > lease_seconds:
+                    r["status"] = "queued"
+                    r["last_error"] = "stale publishing claim reaped"
+                    r["updated_at"] = _now()
+                    reaped.append(r["id"])
+            if reaped:
+                _write_all(rows)
+        return reaped
 
 
 def _new_row(unit_dict: dict, platform_key: str, scheduled_for: str) -> dict:
@@ -557,6 +590,26 @@ class RedisQueue:
                     pass
         return canceled
 
+    def reap_stale_publishing(self, lease_seconds: int) -> list[str]:
+        now_epoch = _iso_to_epoch(_now())
+        reaped: list[str] = []
+        for rid in self._r.smembers(self._all_key()):
+            row_id = rid.decode() if isinstance(rid, bytes) else rid
+            row = self._read(row_id)
+            if not row or row.get("status") != "publishing":
+                continue
+            try:
+                age = now_epoch - _iso_to_epoch(row.get("updated_at", ""))
+            except (ValueError, TypeError):
+                age = lease_seconds + 1
+            if age > lease_seconds and self._conditional_update(
+                row_id, {"publishing"},
+                {"status": "queued", "last_error": "stale publishing claim reaped"},
+            ):
+                reaped.append(row_id)
+        return reaped
+
+
 
 # ─── Postgres backend ──────────────────────────────────────────────────────
 #
@@ -751,6 +804,18 @@ class PostgresQueue:
         with self._conn() as conn, conn.cursor() as cur:
             cur.execute(sql, (unit_id,))
             return [self._row_to_dict(r) for r in cur.fetchall()]
+
+    def reap_stale_publishing(self, lease_seconds: int) -> list[str]:
+        sql = f"""
+            UPDATE {self.TABLE}
+            SET status = 'queued', last_error = 'stale publishing claim reaped'
+            WHERE status = 'publishing'
+              AND updated_at < now() - make_interval(secs => %s)
+            RETURNING id
+        """
+        with self._conn() as conn, conn.cursor() as cur:
+            cur.execute(sql, (lease_seconds,))
+            return [str(r[0]) for r in cur.fetchall()]
 
 
 # ─── Factory ──────────────────────────────────────────────────────────────

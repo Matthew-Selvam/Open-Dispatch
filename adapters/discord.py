@@ -64,4 +64,4 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
     except httpx.HTTPStatusError as e:
         return False, "", prefix_error(classify(e.response.status_code), f"HTTP {e.response.status_code}: {clip(e.response.text)}")
     except Exception as e:  # noqa: BLE001
-        return False, "", f"discord error: {e}"
+        return False, "", prefix_error("retryable", f"discord error: {clip(e)}")

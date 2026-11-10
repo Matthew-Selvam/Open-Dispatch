@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Adapters now apply the "post went out, never retry" rule consistently (subagent review round).**
+  - Threads: a network error, 5xx, non-JSON body, or missing id on the `threads_publish` step is
+    reported `published` (unconfirmed) instead of retryable — the worker previously re-created
+    the container and double-posted.
+  - TikTok: once video init succeeds, any status-poll failure (HTTP, network, bad body) is
+    `published` — a re-init would post a second copy of the video. Init error envelopes are now
+    classified (invalid token → auth, rate limit → retryable, rest → permanent) and clipped.
+  - Instagram: `media_publish` 5xx/network failures are `published` (the container already
+    exists; re-running the whole publish creates a second one); a 200-with-no-id is now
+    `published`-unconfirmed instead of `permanent` (the post is likely live; the row was being
+    dead-lettered).
+  - Facebook: HTTP errors are classified (`auth:` for 401/403 instead of the bare string the
+    worker read as retryable); Twitter and Bluesky classify revoked credentials and rate limits
+    by exception type; Instagram/Facebook/Discord generic errors are redacted and clipped.
+  - Telegram: message chunking no longer splits an HTML tag or `&#…;` entity across chunks
+    (which Telegram rejects with "can't parse entities", dead-lettering partially-sent posts).
+- **Worker: stale-claim reaper.** A hard crash mid-publish (SIGKILL, OOM, power loss) left the
+  row in "publishing" forever, unrecoverable by hand. `WORKER_PUBLISHING_LEASE` (default 900s)
+  re-queues such rows at the top of every poll, across all three queue backends.
+- **Worker: webhook edge cases.** A webhook URL with a malformed port raised out of `run_once`
+  and aborted the whole poll cycle; IPv6 targets were silently dropped (unbracketed IP in the
+  pinned URL); non-default ports now get a correct `Host: host:port` header.
+
+### Security hardening (previous round)
 - **Security hardening (subagent review round).**
   - Reflected XSS in the row-detail 404 page: the raw `row_id` from the URL was interpolated
     into a hand-built HTML f-string outside Jinja's autoescape. Now escaped.

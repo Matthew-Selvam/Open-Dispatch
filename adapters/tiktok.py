@@ -22,7 +22,7 @@ import time
 
 import httpx
 
-from adapters.errors import PUBLISHED, classify, clip, prefix_error
+from adapters.errors import AUTH, PERMANENT, PUBLISHED, RETRYABLE, classify, clip, prefix_error
 from api.schema import ContentUnit
 
 log = logging.getLogger("open-dispatch.tiktok")
@@ -81,24 +81,47 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
         init_data = init_r.json()
 
         if init_data.get("error", {}).get("code", "ok") != "ok":
-            msg = init_data["error"].get("message", "unknown error")
-            return False, "", f"TikTok init error: {msg}"
+            code = str(init_data["error"].get("code", "?"))
+            msg = clip(init_data["error"].get("message", "unknown error"))
+            # The init envelope used to be returned unclassified, so an auth
+            # failure was retried twice before dead-lettering. Classify by
+            # known codes: revoked/invalid token, rate limit, everything else
+            # is a bad request.
+            if code in ("access_token_invalid",):
+                cls = AUTH
+            elif code in ("rate_limit_exceeded", "22000"):
+                cls = RETRYABLE
+            else:
+                cls = PERMANENT
+            return False, "", prefix_error(cls, f"TikTok init error {code}: {msg}")
 
         publish_id = init_data.get("data", {}).get("publish_id", "")
         if not publish_id:
-            return False, "", "TikTok returned no publish_id"
+            # Init returned an ok envelope, so PULL_FROM_URL ingestion is
+            # probably already running even though we cannot poll it.
+            return False, "", prefix_error(
+                PUBLISHED, "TikTok init ok but no publish_id; video may still publish")
 
-        # Step 2 — poll for publish status (TikTok processes async)
+        # Step 2 — poll for publish status (TikTok processes async).
+        # From here on the video WILL go out: PULL_FROM_URL is already
+        # ingesting. Any poll failure must never trigger a re-init, which
+        # would post a second copy of the video.
         for _ in range(12):
             time.sleep(5)
-            status_r = httpx.post(
-                f"{_BASE}/post/publish/status/fetch/",
-                headers=headers,
-                json={"publish_id": publish_id},
-                timeout=15,
-            )
-            status_r.raise_for_status()
-            status_data = status_r.json()
+            try:
+                status_r = httpx.post(
+                    f"{_BASE}/post/publish/status/fetch/",
+                    headers=headers,
+                    json={"publish_id": publish_id},
+                    timeout=15,
+                )
+                status_r.raise_for_status()
+                status_data = status_r.json()
+            except Exception as e:  # noqa: BLE001
+                return False, "", prefix_error(
+                    PUBLISHED,
+                    f"TikTok status poll failed after init (publish_id={publish_id}), "
+                    f"video may publish, NOT retried: {clip(e)}")
             # A status response can carry an error envelope with HTTP 200.
             err_env = status_data.get("error")
             if err_env:

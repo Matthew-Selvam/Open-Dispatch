@@ -20,7 +20,7 @@ import time
 
 import httpx
 
-from adapters.errors import PERMANENT, classify, clip, prefix_error
+from adapters.errors import PERMANENT, PUBLISHED, classify, clip, prefix_error
 from api.schema import ContentUnit
 
 log = logging.getLogger("open-dispatch.instagram")
@@ -112,19 +112,35 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
         if not ok:
             return False, "", err
 
-        r = httpx.post(f"{GRAPH}/{ig_user_id}/media_publish",
-                       data={"creation_id": creation_id, "access_token": token},
-                       timeout=30)
+        # media_publish is the point of no return: the container exists and
+        # the media is FINISHED, so re-running the whole publish would create
+        # a NEW container and double-post. Ambiguous publish-step outcomes
+        # must be classified `published` (never retried); only a clear 4xx is
+        # safe to classify by status.
+        try:
+            r = httpx.post(f"{GRAPH}/{ig_user_id}/media_publish",
+                           data={"creation_id": creation_id, "access_token": token},
+                           timeout=30)
+        except Exception as e:  # noqa: BLE001
+            return False, "", prefix_error(
+                PUBLISHED,
+                f"media_publish network error (creation_id={creation_id}), "
+                f"media may publish, NOT retried: {clip(e)}")
+        if r.status_code >= 500:
+            return False, "", prefix_error(
+                PUBLISHED, f"media_publish HTTP {r.status_code}: {clip(r.text)}")
         if r.status_code >= 400:
             return False, "", prefix_error(
                 classify(r.status_code), f"publish: {r.status_code} {clip(r.text)}")
-        # A 200 with no id means the media never got published. Returning
-        # ok=True here marked the row published with an empty post_id and
-        # fired a published webhook for a post that does not exist.
+        # A 200 with no id is published-but-unconfirmed: Meta returns the id on
+        # success, so the media probably went out. The old behaviour (ok=True)
+        # fired a published webhook for a post that does not exist; PERMANENT
+        # dead-lettered a row whose post is likely live. `published` marks the
+        # row done without retrying and flags the webhook payload unconfirmed.
         pid = r.json().get("id")
         if not pid:
             return False, "", prefix_error(
-                PERMANENT, f"media_publish 200 but no id in response: {clip(r.text)}")
+                PUBLISHED, f"media_publish 200 but no id in response: {clip(r.text)}")
         return True, str(pid), ""
     except Exception as e:  # noqa: BLE001
-        return False, "", f"instagram error: {e}"
+        return False, "", prefix_error("retryable", f"instagram error: {clip(e)}")

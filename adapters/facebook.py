@@ -88,7 +88,10 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
         return True, post_id, ""
 
     except httpx.HTTPStatusError as e:
+        # Used to be a bare f-string: the worker saw "HTTP 401: …" with no
+        # class prefix and retried revoked tokens twice before dead-lettering.
         body_text = clip(e.response.text)
-        return False, "", f"HTTP {e.response.status_code}: {body_text}"
+        return False, "", prefix_error(
+            classify(e.response.status_code), f"HTTP {e.response.status_code}: {body_text}")
     except Exception as e:  # noqa: BLE001
-        return False, "", f"facebook error: {e}"
+        return False, "", prefix_error("retryable", f"facebook error: {clip(e)}")

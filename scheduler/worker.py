@@ -50,6 +50,11 @@ log = logging.getLogger("open-dispatch.worker")
 POLL_INTERVAL = int(os.getenv("WORKER_POLL_INTERVAL", "5"))
 MAX_ATTEMPTS = int(os.getenv("WORKER_MAX_ATTEMPTS", "3"))
 BACKOFF_BASE = int(os.getenv("WORKER_BACKOFF_BASE", "30"))  # seconds
+# A hard crash mid-publish (SIGKILL, OOM, power loss) leaves the row in
+# "publishing" forever — the try/except around _publish cannot catch it, and
+# retry() only accepts queued/failed/dead. Rows older than this lease are
+# re-queued at the top of every poll loop.
+PUBLISHING_LEASE = int(os.getenv("WORKER_PUBLISHING_LEASE", "900"))
 
 
 def _write_heartbeat() -> None:
@@ -98,8 +103,12 @@ def _validated_webhook_target(url: str) -> tuple[str, str] | None:
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.hostname:
         return None
+    # parsed.port raises ValueError for a malformed port — read it INSIDE the
+    # try, not as a getaddrinfo argument, or the exception escapes run_once
+    # and aborts the whole publishing cycle for that poll.
     try:
-        infos = socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)
+        port = parsed.port or 443
+        infos = socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
     except (OSError, ValueError):
         return None
     addresses = {ipaddress.ip_address(info[4][0]) for info in infos}
@@ -109,7 +118,7 @@ def _validated_webhook_target(url: str) -> tuple[str, str] | None:
     ):
         return None
     ip = sorted(addresses, key=lambda a: (a.version, str(a)))[0]
-    return str(ip), str(parsed.port or 443)
+    return str(ip), str(port)
 
 
 def _fire_webhook(url: str, payload: dict) -> None:
@@ -118,17 +127,22 @@ def _fire_webhook(url: str, payload: dict) -> None:
         log.warning("webhook rejected by egress policy")
         return
     ip, port = target
+    port_i = int(port)
     parsed = urlparse(url)
     host = parsed.hostname
     # Connect to the address we validated, while TLS SNI, the Host header and
-    # certificate verification stay pinned to the real hostname. If this
-    # httpx build cannot pin SNI, fail closed rather than resolve again.
-    pinned = f"https://{ip}:{port}{parsed.path}"
+    # certificate verification stay pinned to the real hostname. IPv6
+    # addresses must be bracketed in a URL; a non-default port belongs in the
+    # Host header per RFC 7230. If this httpx build cannot pin SNI, fail
+    # closed rather than resolve again.
+    ip_token = f"[{ip}]" if ":" in ip else ip
+    host_header = host if port_i == 443 else f"{host}:{port_i}"
+    pinned = f"https://{ip_token}:{port}{parsed.path}"
     if parsed.query:
         pinned += f"?{parsed.query}"
     try:
         httpx.post(pinned, json=payload, timeout=10, follow_redirects=False,
-                   headers={"Host": host}, extensions={"sni_hostname": host})
+                   headers={"Host": host_header}, extensions={"sni_hostname": host})
     except TypeError:
         log.warning("webhook not sent: httpx build lacks sni_hostname pinning; refusing unpinned connection")
     except Exception as e:  # noqa: BLE001
@@ -137,6 +151,15 @@ def _fire_webhook(url: str, payload: dict) -> None:
 
 def run_once() -> int:
     q = get_queue()
+    # Reap stale "publishing" claims before listing due rows, so a row orphaned
+    # by a crash becomes visible to this same poll instead of waiting a cycle.
+    try:
+        reaped = q.reap_stale_publishing(PUBLISHING_LEASE)
+        if reaped:
+            log.warning("reaped %d stale publishing claim(s): %s",
+                        len(reaped), ", ".join(reaped[:5]))
+    except Exception as e:  # noqa: BLE001
+        log.warning("stale-claim reaper failed: %s", e)
     now_iso = datetime.now(tz=timezone.utc).isoformat()
     due = q.list_due(now_iso)
     if not due:

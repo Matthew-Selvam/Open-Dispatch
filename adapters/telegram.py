@@ -24,9 +24,37 @@ log = logging.getLogger("open-dispatch.telegram")
 
 
 def _chunk(text: str, limit: int) -> list[str]:
+    """Split into <=limit pieces without cutting an HTML tag or entity.
+
+    With parse_mode=HTML (the default), a chunk that slices a tag (<b>) or a
+    numeric entity (&#8205;) in half is rejected by Telegram with "can't parse
+    entities" — PERMANENT, so the message dead-letters even though earlier
+    chunks went out. Back the cut point up to before the unclosed marker.
+    """
     if len(text) <= limit:
         return [text]
-    return [text[i:i + limit] for i in range(0, len(text), limit)]
+    chunks: list[str] = []
+    start, n = 0, len(text)
+    while start < n:
+        end = min(start + limit, n)
+        if end < n:
+            lt = text.rfind("<", start, end)
+            gt = text.rfind(">", start, end)
+            if lt > gt:  # an unclosed tag opens before the cut
+                end = lt
+            else:
+                amp = text.rfind("&", start, end)
+                semi = text.rfind(";", start, end)
+                if amp > semi:  # an unterminated entity starts before the cut
+                    end = amp
+            if end <= start:
+                # Pathological: a single tag/entity longer than the limit.
+                # Split anyway — an oversized chunk is dead-lettered by
+                # Telegram either way, and this cannot loop forever.
+                end = start + limit
+        chunks.append(text[start:end])
+        start = end
+    return chunks
 
 
 def _result_message_id(r: Any) -> tuple[str, str]:

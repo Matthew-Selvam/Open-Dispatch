@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import os
 
-from adapters.errors import PERMANENT, PUBLISHED, clip, prefix_error
+from adapters.errors import AUTH, PERMANENT, PUBLISHED, RETRYABLE, clip, prefix_error
 from api.schema import ContentUnit
 from media.paths import resolve_media_path, MediaPathError
 
@@ -104,4 +104,13 @@ def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, s
                 f"tweet {len(posted)}/{len(tweets)} published before failing "
                 f"(ids {', '.join(posted[:5])}); NOT retried to avoid duplicates: {clip(e)}",
             )
-        return False, "", prefix_error("retryable", f"twitter error: {clip(e)}")
+        # Exception-type classification: a revoked token used to be retried
+        # twice before dead-lettering because every exception read "retryable".
+        if isinstance(e, tweepy.Unauthorized):
+            return False, "", prefix_error(AUTH, f"twitter auth failed: {clip(e)}")
+        if isinstance(e, tweepy.Forbidden):
+            return False, "", prefix_error(
+                AUTH, f"twitter forbidden (check app permissions/token scopes): {clip(e)}")
+        if isinstance(e, tweepy.TooManyRequests):
+            return False, "", prefix_error(RETRYABLE, f"twitter rate limited: {clip(e)}")
+        return False, "", prefix_error(RETRYABLE, f"twitter error: {clip(e)}")

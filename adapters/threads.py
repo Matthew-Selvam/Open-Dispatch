@@ -27,7 +27,7 @@ import time
 
 import httpx
 
-from adapters.errors import classify, clip, prefix_error
+from adapters.errors import PUBLISHED, classify, clip, prefix_error
 from api.schema import ContentUnit
 
 log = logging.getLogger("open-dispatch.threads")
@@ -103,15 +103,28 @@ def _publish_container(
             timeout=30,
         )
     except (httpx.HTTPError, httpx.InvalidURL) as e:
-        return None, f"network error publishing: {e}"
+        # threads_publish is the point of no return: a timeout or connection
+        # error may mean the server processed the request. The worker retries
+        # the WHOLE publish (new container → duplicate post), so every
+        # ambiguous publish-step outcome must be classified `published`.
+        return None, prefix_error(
+            PUBLISHED, f"publish: network error, may have succeeded, NOT retried: {clip(e)}")
+    if r.status_code >= 500:
+        # Same ambiguity for a server-side failure: the publish may have gone
+        # through before the 5xx. Retrying re-creates the container and
+        # double-posts; a genuine failure is recoverable by the user manually.
+        return None, prefix_error(
+            PUBLISHED, f"publish HTTP {r.status_code}: {clip(r.text)}")
     if r.status_code >= 400:
         return None, prefix_error(classify(r.status_code), f"publish HTTP {r.status_code}: {clip(r.text)}")
     try:
         post_id = r.json().get("id")
     except ValueError:
-        return None, "publish: non-JSON response"
+        return None, prefix_error(
+            PUBLISHED, f"publish: non-JSON response, may have succeeded: {clip(r.text)}")
     if not post_id:
-        return None, "publish: missing id in response"
+        return None, prefix_error(
+            PUBLISHED, f"publish: missing id in response, may have succeeded: {clip(r.text)}")
     return post_id, ""
 
 

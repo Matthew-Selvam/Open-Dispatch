@@ -45,8 +45,14 @@ def _fake_tweepy(monkeypatch, fail_on_call: int):
             ids.append(tid)
             return FakeResp(tid)
 
+    import tweepy as _real_tweepy
     monkeypatch.setitem(sys.modules, "tweepy", types.SimpleNamespace(
-        Client=lambda **kw: FakeClient(), API=None, OAuth1UserHandler=lambda *a: None))
+        Client=lambda **kw: FakeClient(), API=None,
+        OAuth1UserHandler=lambda *a: None,
+        # the adapter's exception classifier needs the real error classes
+        Unauthorized=_real_tweepy.Unauthorized,
+        Forbidden=_real_tweepy.Forbidden,
+        TooManyRequests=_real_tweepy.TooManyRequests))
     return ids
 
 
