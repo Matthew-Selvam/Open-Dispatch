@@ -71,13 +71,18 @@ cp "${APP_DIR}/Sources/OpenDispatch/Resources/Info.plist" "${APP_BUNDLE}/Content
 echo "▶ Bundling open-dispatch server into app Resources…"
 BUNDLE_PREFIX="${BUILD_DIR}/bundle-prefix"
 rm -rf "$BUNDLE_PREFIX"
+# --bundle emits relocatable wrappers: the stock wrappers bake in the
+# build-time prefix, which stops existing the moment the .app leaves dist/.
 bash install.sh \
   --prefix    "$BUNDLE_PREFIX" \
   --version   "v${VERSION}" \
-  --data-dir  "${HOME}/.open-dispatch" \
-  --no-service
+  --no-service \
+  --bundle
 cp -r "${BUNDLE_PREFIX}/bin"             "${RES_DIR}/bin"
 cp -r "${BUNDLE_PREFIX}/opt/open-dispatch" "${RES_DIR}/server"
+if [ -d "${BUNDLE_PREFIX}/runtime" ]; then
+  cp -R "${BUNDLE_PREFIX}/runtime" "${RES_DIR}/runtime"
+fi
 
 echo "✓ App bundle assembled: ${APP_BUNDLE}"
 

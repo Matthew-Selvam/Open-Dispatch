@@ -27,6 +27,7 @@ VERSION="${OPEN_DISPATCH_VERSION:-v0.4.0}"
 INSTALL_DIR="${INSTALL_DIR:-${PREFIX}/opt/open-dispatch}"
 DATA_DIR="${DATA_DIR:-${HOME}/.open-dispatch}"
 INSTALL_SERVICE=true
+BUNDLE=false
 
 # ── argument parsing ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -40,8 +41,10 @@ while [[ $# -gt 0 ]]; do
     --data-dir=*)   DATA_DIR="${1#*=}"; shift ;;
     --data-dir)     [[ $# -ge 2 ]] || error "--data-dir requires a directory"; DATA_DIR="$2"; shift 2 ;;
     --no-service) INSTALL_SERVICE=false; shift ;;
+    --bundle) BUNDLE=true; INSTALL_SERVICE=false; shift ;;
     --help|-h)
-      echo "Usage: install.sh [--prefix DIR] [--install-dir DIR] [--version TAG] [--data-dir DIR] [--no-service]"
+      echo "Usage: install.sh [--prefix DIR] [--install-dir DIR] [--version TAG] [--data-dir DIR] [--no-service] [--bundle]"
+      echo "  --bundle  emit relocatable wrappers for embedding (e.g. the macOS app bundle)"
       exit 0
       ;;
     *) error "Unknown option: $1" ;;
@@ -127,6 +130,35 @@ info "Creating Python virtualenv …"
 "${VENV}/bin/pip" install --upgrade --quiet pip wheel
 "${VENV}/bin/pip" install --quiet -r "${INSTALL_DIR}/requirements.txt"
 
+if [[ "$BUNDLE" == "true" ]]; then
+  # Bundle the interpreter itself: the .app must run on machines with no
+  # Python installed, and a venv alone is not relocatable — its python
+  # binary reaches the stdlib through pyvenv.cfg 'home' (an absolute path
+  # to the build machine) and libpython through a relative rpath. So we
+  # ship the base runtime next to the venv and point PYTHONHOME at it.
+  PY_REAL="$(readlink -f "$(command -v "$PYTHON")")"
+  BASE_DIR="$(cd "$(dirname "$PY_REAL")/.." && pwd)"
+  if [[ ! -d "${BASE_DIR}/lib" ]]; then
+    error "Cannot locate the base ${PYTHON} installation for bundling."
+  fi
+  # Only relative-rpath builds (uv-style distributions) relocate safely:
+  # no load command may point into the base installation by absolute path.
+  # (otool's header line echoes the binary path itself, so filter to
+  # load-command name/path entries first.)
+  if otool -l "$PY_REAL" 2>/dev/null \
+      | grep -E '^[[:space:]]+(path|name)[[:space:]]' \
+      | grep -v '@' \
+      | grep -F "$BASE_DIR" >/dev/null; then
+    error "${BASE_DIR} is not relocatable (absolute load commands).
+       Install a relocatable Python, e.g.: uv python install 3.14"
+  fi
+  info "Bundling Python runtime from ${BASE_DIR} …"
+  cp -R "${BASE_DIR}" "${PREFIX}/runtime"
+  # The venv python's rpath is @executable_path/../lib — satisfy it from
+  # the copied venv so it never reaches back into the build machine.
+  cp "${BASE_DIR}/lib"/libpython*.dylib "${VENV}/lib/" 2>/dev/null || true
+fi
+
 # .env example → data dir (if first install)
 if [[ ! -f "${DATA_DIR}/.env" && -f "${INSTALL_DIR}/.env.example" ]]; then
   cp "${INSTALL_DIR}/.env.example" "${DATA_DIR}/.env"
@@ -140,6 +172,60 @@ write_script() {
   chmod +x "$path"
 }
 
+if [[ "$BUNDLE" == "true" ]]; then
+  # Relocatable wrappers for embedding (macOS .app Resources/bin, Docker
+  # images, portable tars). Build-time absolute paths broke as soon as the
+  # bundle moved: the wrappers pointed at the deleted staging prefix. These
+  # resolve everything from the wrapper's own location instead, and they
+  # honour an inherited OPEN_DISPATCH_DATA so a host app can choose the
+  # data dir (the Swift app points at ~/Library/Application Support).
+  write_script "${PREFIX}/bin/dispatch" <<'SCRIPT'
+#!/usr/bin/env bash
+set -e
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVER_DIR="${SELF_DIR}/../server"
+RUNTIME_DIR="${SELF_DIR}/../runtime"
+if [ -d "${RUNTIME_DIR}" ]; then export PYTHONHOME="${RUNTIME_DIR}"; fi
+export OPEN_DISPATCH_DATA="${OPEN_DISPATCH_DATA:-${HOME}/.open-dispatch}"
+if [ -f "${OPEN_DISPATCH_DATA}/.env" ]; then
+  set -o allexport; source "${OPEN_DISPATCH_DATA}/.env"; set +o allexport
+fi
+exec "${SERVER_DIR}/venv/bin/python" "${SERVER_DIR}/cli.py" "$@"
+SCRIPT
+
+  write_script "${PREFIX}/bin/open-dispatch" <<'SCRIPT'
+#!/usr/bin/env bash
+set -e
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVER_DIR="${SELF_DIR}/../server"
+RUNTIME_DIR="${SELF_DIR}/../runtime"
+if [ -d "${RUNTIME_DIR}" ]; then export PYTHONHOME="${RUNTIME_DIR}"; fi
+export OPEN_DISPATCH_DATA="${OPEN_DISPATCH_DATA:-${HOME}/.open-dispatch}"
+if [ -f "${OPEN_DISPATCH_DATA}/.env" ]; then
+  set -o allexport; source "${OPEN_DISPATCH_DATA}/.env"; set +o allexport
+fi
+cd "${SERVER_DIR}"
+# Run via the venv python, not the uvicorn console script: venv console
+# scripts embed the absolute build-time interpreter path in their shebang
+# and break the moment the bundle is relocated.
+exec "${SERVER_DIR}/venv/bin/python" -m uvicorn api.app:app --host "${HOST:-127.0.0.1}" --port "${PORT:-8000}" "$@"
+SCRIPT
+
+  write_script "${PREFIX}/bin/open-dispatch-worker" <<'SCRIPT'
+#!/usr/bin/env bash
+set -e
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVER_DIR="${SELF_DIR}/../server"
+RUNTIME_DIR="${SELF_DIR}/../runtime"
+if [ -d "${RUNTIME_DIR}" ]; then export PYTHONHOME="${RUNTIME_DIR}"; fi
+export OPEN_DISPATCH_DATA="${OPEN_DISPATCH_DATA:-${HOME}/.open-dispatch}"
+if [ -f "${OPEN_DISPATCH_DATA}/.env" ]; then
+  set -o allexport; source "${OPEN_DISPATCH_DATA}/.env"; set +o allexport
+fi
+cd "${SERVER_DIR}"
+exec "${SERVER_DIR}/venv/bin/python" -m scheduler.worker "$@"
+SCRIPT
+else
 write_script "${PREFIX}/bin/dispatch" <<SCRIPT
 #!/usr/bin/env bash
 if [ -f "${DATA_DIR}/.env" ]; then
@@ -172,6 +258,7 @@ export OPEN_DISPATCH_DATA="${DATA_DIR}"
 cd "${INSTALL_DIR}"
 exec "${VENV}/bin/python" -m scheduler.worker "\$@"
 SCRIPT
+fi
 
 success "Installed: dispatch, open-dispatch, open-dispatch-worker"
 
