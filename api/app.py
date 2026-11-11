@@ -31,7 +31,7 @@ from fastapi.templating import Jinja2Templates
 
 from adapters import ADAPTERS
 from ai import AdaptError, adapt_caption_async
-from api.queue import get_queue
+from api.queue import QueueBackendError, get_queue
 from api.schema import ContentUnit, parse_target, validate
 from media import PLATFORM_IMAGE_SPECS, TranscodeError, transcode_image_bytes
 from profiles import (
@@ -111,7 +111,20 @@ async def security_middleware(request: Request, call_next):
     return response
 
 
+@app.exception_handler(QueueBackendError)
+async def _queue_backend_error(request: Request, exc: QueueBackendError) -> JSONResponse:
+    """Fail closed: an explicitly configured queue backend that is down must
+    return an explicit 503 with the operator's fix, never a silent success
+    and never a bare 500 with a traceback."""
+    return JSONResponse(
+        {"detail": str(exc), "queue_backend": exc.backend},
+        status_code=503,
+        headers={"Retry-After": "10"},
+    )
+
+
 def _platforms_configured() -> set[str]:
+    """Which platforms have all the required credential env vars set?"""
     """Which platforms have all the required credential env vars set?"""
     return {
         platform for platform, envs in REQUIRED_ENV_VARS.items()
@@ -226,7 +239,29 @@ def _worker_status() -> dict[str, Any]:
 
 def _healthz_context() -> dict[str, Any]:
     """Build the health-dashboard stats from the queue. Cheap — one list_all()."""
-    rows = get_queue().list_all()
+    try:
+        rows = get_queue().list_all()
+    except QueueBackendError as e:
+        # QUEUE-2: the API is running but the configured queue backend is
+        # down. The health page must say exactly that — not crash with a
+        # traceback, and not pretend the queue is fine.
+        return {
+            "active": "health",
+            "version": VERSION,
+            "now": datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            "uptime": _fmt_uptime((datetime.now(tz=timezone.utc) - _START_TIME).total_seconds()),
+            "backend": _queue_backend_name(),
+            "worker": _worker_status(),
+            "queue_unavailable": str(e),
+            "counts": {},
+            "total": 0,
+            "configured_platforms": sorted(_platforms_configured()),
+            "last_dispatch": None,
+            "top_platforms": [],
+            "recent_errors": [],
+            "failed_count": 0,
+            "platform_emoji": PLATFORM_EMOJI,
+        }
     counts = _row_counts(rows)
 
     published = [r for r in rows if r.get("status") == "published"]
@@ -299,6 +334,22 @@ def healthz(request: Request) -> Any:
     if _wants_html(request):
         return templates.TemplateResponse(request, "health.html", _healthz_context())
     ctx = _healthz_context()
+    if ctx.get("queue_unavailable"):
+        # QUEUE-2: the API process is running but the configured queue
+        # backend is down. The health endpoint must distinguish a running
+        # API from a functioning queue: 200 + queue ok when the queue
+        # works, 503 + queue_error with the operator's fix when it does not.
+        return JSONResponse({
+            "status": "degraded",
+            "version": VERSION,
+            "backend": ctx["backend"],
+            "worker": ctx["worker"],
+            "queue_error": ctx["queue_unavailable"],
+            "total": 0,
+            "counts": {},
+            "failed_count": 0,
+            "configured_platforms": ctx["configured_platforms"],
+        }, status_code=503, headers={"Retry-After": "10"})
     return JSONResponse({
         "status": "ok",
         "version": VERSION,

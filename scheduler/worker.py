@@ -27,7 +27,7 @@ import httpx
 
 from adapters import ADAPTERS
 from adapters.errors import AUTH, PERMANENT, PUBLISHED, clip
-from api.queue import get_queue
+from api.queue import QueueBackendError, get_queue
 from api.schema import ContentUnit
 from profiles import ProfileStore, profile_env
 
@@ -240,6 +240,16 @@ def main() -> int:
         except KeyboardInterrupt:
             log.info("interrupted; exiting")
             return 0
+        except QueueBackendError as e:
+            # QUEUE-2 fail-closed: the explicitly configured backend is down.
+            # The worker must NOT silently switch stores (that would split
+            # the queue) and must not crash-restart (that would lose in-flight
+            # state tracking). It logs a clear, actionable error and retries
+            # on the next poll — recovery is deterministic: once the backend
+            # is reachable again, the next poll picks up exactly where it
+            # left off, and any row that was mid-publish when the outage hit
+            # is quarantined by the reaper for operator verification.
+            log.error("queue backend unavailable: %s — retrying in %ds", e, POLL_INTERVAL)
         except Exception as e:  # noqa: BLE001
             log.exception("worker loop error: %s", e)
         time.sleep(POLL_INTERVAL)

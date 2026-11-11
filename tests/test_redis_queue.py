@@ -8,6 +8,8 @@ is small enough to stub directly.
 from __future__ import annotations
 
 import json
+
+import pytest
 from datetime import datetime, timedelta, timezone
 
 from api.queue import RedisQueue
@@ -230,12 +232,16 @@ def test_factory_falls_back_to_jsonl_when_no_redis_url(monkeypatch):
     assert isinstance(q, JsonlQueue)
 
 
-def test_factory_falls_back_when_redis_unavailable(monkeypatch):
-    """REDIS_URL set but the redis package can't connect → JSONL fallback."""
+def test_factory_fails_closed_when_redis_unavailable(monkeypatch):
+    """REDIS_URL set but Redis can't connect → QueueBackendError (QUEUE-2).
+
+    A silent JSONL fallback would split the queue across two stores: jobs
+    enqueued during the outage would land in JSONL while older jobs sat in
+    the unreachable Redis, and they could never be reconciled. Fail closed
+    instead: the operator fixes the configuration or unsets REDIS_URL to
+    deliberately switch to JSONL."""
     monkeypatch.setenv("REDIS_URL", "redis://nonexistent.invalid:6379/0")
-    from api.queue import JsonlQueue, _reset_singleton_for_tests, get_queue
+    from api.queue import QueueBackendError, _reset_singleton_for_tests, get_queue
     _reset_singleton_for_tests()
-    q = get_queue()
-    # Either redis isn't installed (returns JsonlQueue) or it is installed but
-    # can't reach the host (also returns JsonlQueue). Both acceptable.
-    assert isinstance(q, JsonlQueue)
+    with pytest.raises(QueueBackendError):
+        get_queue()
