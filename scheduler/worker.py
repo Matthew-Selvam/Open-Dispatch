@@ -11,6 +11,7 @@ import logging
 import os
 import random
 import socket
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 import ipaddress
 import time
@@ -50,6 +51,30 @@ log = logging.getLogger("open-dispatch.worker")
 POLL_INTERVAL = int(os.getenv("WORKER_POLL_INTERVAL", "5"))
 MAX_ATTEMPTS = int(os.getenv("WORKER_MAX_ATTEMPTS", "3"))
 BACKOFF_BASE = int(os.getenv("WORKER_BACKOFF_BASE", "30"))  # seconds
+
+
+def _parse_concurrency(raw: str | None) -> int:
+    """WORKER_CONCURRENCY parse — invalid values fall back to 1, loudly.
+
+    A typo in this env var must not crash-restart the worker (that loses
+    heartbeat continuity), but it must also never silently run at a different
+    concurrency than the operator believes: the fallback is the most
+    conservative value AND logs a warning naming the bad value.
+    """
+    if raw is None or raw.strip() == "":
+        return 1
+    try:
+        n = int(raw)
+    except ValueError:
+        log.warning("WORKER_CONCURRENCY=%r is not an integer; using 1", raw)
+        return 1
+    if n < 1:
+        log.warning("WORKER_CONCURRENCY=%d is < 1; using 1", n)
+        return 1
+    return n
+
+
+WORKER_CONCURRENCY = _parse_concurrency(os.getenv("WORKER_CONCURRENCY"))
 # A hard crash mid-publish (SIGKILL, OOM, power loss) leaves the row in
 # "publishing" forever — the try/except around _publish cannot catch it, and
 # retry() only accepts queued/failed/dead. Rows older than this lease are
@@ -151,6 +176,70 @@ def _fire_webhook(url: str, payload: dict) -> None:
         log.warning("webhook failed: %s", e)
 
 
+def _process_row(q, row: dict) -> None:
+    """Claim and publish one row. Claim (mark_publishing) happens HERE, inside
+    the worker thread, so at most WORKER_CONCURRENCY rows are ever claimed at
+    once — the pool bounds outstanding claims, never more."""
+    rid = row["id"]
+    if not q.mark_publishing(rid):
+        log.info("skip %s: claim lost", rid)
+        return
+    try:
+        ok, post_id, err = _publish(row)
+    except Exception as e:  # noqa: BLE001
+        # An adapter that raises used to leave the row stuck in "publishing"
+        # forever: list_due() only returns "queued" rows and nothing reaps
+        # a stuck claim, so the post was silently lost. Any adapter
+        # exception must become a recorded failure.
+        log.exception("adapter raised for %s", rid)
+        ok, post_id, err = False, "", f"retryable: adapter raised {type(e).__name__}: {clip(e)}"
+    webhook = (row.get("unit") or {}).get("webhook_url")
+    if ok:
+        log.info("✓ %s → %s", rid, post_id)
+        committed = q.mark_published(rid, post_id)
+        if committed and webhook:
+            _fire_webhook(webhook, {"event": "published", "id": rid, "post_id": post_id,
+                                    "platform": row["platform"]})
+    else:
+        err = clip(err)
+        cls, _, detail = err.partition(": ")
+        # A post that went out but whose id we could not read must never be
+        # retried — that is how you get duplicate posts.
+        if cls == PUBLISHED:
+            log.error("✘ %s published but unconfirmed: %s", rid, detail)
+            committed = q.mark_published(rid, post_id or "")
+            if committed and webhook:
+                _fire_webhook(webhook, {"event": "published", "id": rid,
+                                        "post_id": post_id, "unconfirmed": True,
+                                        "platform": row["platform"]})
+            return
+        # Auth and permanent failures cannot succeed on retry; dead-letter
+        # immediately instead of burning two more attempts and backoffs.
+        non_retryable = cls in (AUTH, PERMANENT)
+        attempts = int(row.get("attempts", 0)) + 1
+        dead = non_retryable or attempts >= MAX_ATTEMPTS
+        log.error("✘ %s (attempt %d): %s", rid, attempts, err)
+        # Compute the backoff up front and hand it to mark_failed, so the
+        # status flip and the reschedule land in one guarded write. Doing it
+        # as a separate _update() afterwards left the row briefly "queued"
+        # with a past scheduled_for, which another worker could claim — the
+        # backoff was silently skipped and the stale reschedule landed on an
+        # already-publishing row.
+        retry_at = None
+        if not dead:
+            backoff = _backoff_seconds(attempts)
+            new_sf = datetime.now(tz=timezone.utc).timestamp() + backoff
+            retry_at = datetime.fromtimestamp(new_sf, tz=timezone.utc).isoformat()
+        committed = q.mark_failed(rid, err, dead=dead, retry_at=retry_at)
+        if non_retryable:
+            log.error("  %s — not retryable, dead-lettered", cls)
+        if committed and not dead:
+            log.info("  retry in %ds", backoff)
+        if committed and webhook:
+            _fire_webhook(webhook, {"event": "failed", "id": rid, "error": err,
+                                    "platform": row["platform"], "dead": dead})
+
+
 def run_once() -> int:
     q = get_queue()
     # Reap stale "publishing" claims before listing due rows, so a row orphaned
@@ -167,66 +256,24 @@ def run_once() -> int:
     due = q.list_due(now_iso)
     if not due:
         return 0
-    log.info("publishing %d due row(s)", len(due))
-    for row in due:
-        rid = row["id"]
-        if not q.mark_publishing(rid):
-            log.info("skip %s: claim lost", rid)
-            continue
-        try:
-            ok, post_id, err = _publish(row)
-        except Exception as e:  # noqa: BLE001
-            # An adapter that raises used to leave the row stuck in "publishing"
-            # forever: list_due() only returns "queued" rows and nothing reaps
-            # a stuck claim, so the post was silently lost. Any adapter
-            # exception must become a recorded failure.
-            log.exception("adapter raised for %s", rid)
-            ok, post_id, err = False, "", f"retryable: adapter raised {type(e).__name__}: {clip(e)}"
-        webhook = (row.get("unit") or {}).get("webhook_url")
-        if ok:
-            log.info("✓ %s → %s", rid, post_id)
-            committed = q.mark_published(rid, post_id)
-            if committed and webhook:
-                _fire_webhook(webhook, {"event": "published", "id": rid, "post_id": post_id,
-                                        "platform": row["platform"]})
-        else:
-            err = clip(err)
-            cls, _, detail = err.partition(": ")
-            # A post that went out but whose id we could not read must never be
-            # retried — that is how you get duplicate posts.
-            if cls == PUBLISHED:
-                log.error("✘ %s published but unconfirmed: %s", rid, detail)
-                committed = q.mark_published(rid, post_id or "")
-                if committed and webhook:
-                    _fire_webhook(webhook, {"event": "published", "id": rid,
-                                            "post_id": post_id, "unconfirmed": True,
-                                            "platform": row["platform"]})
-                continue
-            # Auth and permanent failures cannot succeed on retry; dead-letter
-            # immediately instead of burning two more attempts and backoffs.
-            non_retryable = cls in (AUTH, PERMANENT)
-            attempts = int(row.get("attempts", 0)) + 1
-            dead = non_retryable or attempts >= MAX_ATTEMPTS
-            log.error("✘ %s (attempt %d): %s", rid, attempts, err)
-            # Compute the backoff up front and hand it to mark_failed, so the
-            # status flip and the reschedule land in one guarded write. Doing it
-            # as a separate _update() afterwards left the row briefly "queued"
-            # with a past scheduled_for, which another worker could claim — the
-            # backoff was silently skipped and the stale reschedule landed on an
-            # already-publishing row.
-            retry_at = None
-            if not dead:
-                backoff = _backoff_seconds(attempts)
-                new_sf = datetime.now(tz=timezone.utc).timestamp() + backoff
-                retry_at = datetime.fromtimestamp(new_sf, tz=timezone.utc).isoformat()
-            committed = q.mark_failed(rid, err, dead=dead, retry_at=retry_at)
-            if non_retryable:
-                log.error("  %s — not retryable, dead-lettered", cls)
-            if committed and not dead:
-                log.info("  retry in %ds", backoff)
-            if committed and webhook:
-                _fire_webhook(webhook, {"event": "failed", "id": rid, "error": err,
-                                        "platform": row["platform"], "dead": dead})
+    log.info("publishing %d due row(s) (concurrency=%d)", len(due), WORKER_CONCURRENCY)
+    if WORKER_CONCURRENCY <= 1:
+        for row in due:
+            _process_row(q, row)
+    else:
+        # PERF-2: bounded concurrency. list_due() returns rows oldest-first;
+        # each row is CLAIMED inside its task, so only WORKER_CONCURRENCY rows
+        # are claimed at any moment and a slow adapter (e.g. the Threads
+        # settle wait) blocks its own worker slot — never the whole loop.
+        # The `with` block also gives graceful shutdown: on KeyboardInterrupt
+        # the executor waits for in-flight publishes to finish (the claims are
+        # released by mark_published/mark_failed in _process_row) instead of
+        # orphaning rows mid-publish.
+        with ThreadPoolExecutor(max_workers=WORKER_CONCURRENCY,
+                                thread_name_prefix="od-publish") as pool:
+            futures = [pool.submit(_process_row, q, row) for row in due]
+            for fut in futures:
+                fut.result()  # propagate task exceptions to the loop
     return len(due)
 
 
