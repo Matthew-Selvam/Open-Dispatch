@@ -26,6 +26,7 @@ and API code never need to know which one is active.
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
@@ -408,6 +409,32 @@ def _new_row(unit_dict: dict, platform_key: str, scheduled_for: str) -> dict:
 # the schema minimal so anyone can `redis-cli MONITOR` and understand what
 # the queue is doing.
 
+def _fail_closed_redis(fn):
+    """QUEUE-2: wrap Redis connection/timeout failures in QueueBackendError.
+
+    Only transport-class failures (redis.exceptions.ConnectionError /
+    TimeoutError, matched by module+name so the optional redis import is not
+    needed here) are wrapped: WatchError-style contention and genuine state
+    errors keep their original semantics. Callers then get the same
+    actionable backend-failure contract as the Postgres backend.
+    """
+    @functools.wraps(fn)
+    def wrapper(self, *a, **kw):
+        try:
+            return fn(self, *a, **kw)
+        except QueueBackendError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            if (type(e).__module__.startswith("redis")
+                    and type(e).__name__ in {"ConnectionError", "TimeoutError"}):
+                raise QueueBackendError(
+                    "redis",
+                    f"connection failed mid-operation: {type(e).__name__}: {e}",
+                ) from e
+            raise
+    return wrapper
+
+
 class RedisQueue:
     """Redis-backed queue. Set REDIS_URL to opt in.
 
@@ -451,6 +478,7 @@ class RedisQueue:
         row["updated_at"] = _now()
         self._r.set(self._row_key(row["id"]), json.dumps(row, ensure_ascii=False))
 
+    @_fail_closed_redis
     def enqueue(self, unit_dict: dict, platform_key: str, scheduled_for: str) -> str:
         row = _new_row(unit_dict, platform_key, scheduled_for)
         pipe = self._r.pipeline()
@@ -460,6 +488,7 @@ class RedisQueue:
         pipe.execute()
         return row["id"]
 
+    @_fail_closed_redis
     def list_all(self, status: str | None = None) -> list[dict]:
         ids = self._r.smembers(self._all_key())
         if not ids:
@@ -478,9 +507,11 @@ class RedisQueue:
                 rows.append(row)
         return rows
 
+    @_fail_closed_redis
     def get(self, row_id: str) -> dict | None:
         return self._read(row_id)
 
+    @_fail_closed_redis
     def list_due(self, now_iso: str) -> list[dict]:
         max_score = _iso_to_epoch(now_iso)
         # ZRANGEBYSCORE 0 now → ids whose scheduled_for ≤ now
@@ -508,6 +539,7 @@ class RedisQueue:
         else:
             self._r.zrem(self._due_key(), row_id)
 
+    @_fail_closed_redis
     def mark_publishing(self, row_id: str) -> bool:
         """Claim a due row. A row backed off to a future time cannot be claimed."""
         # Optimistic transaction makes the queued check and state transition atomic.
@@ -602,10 +634,12 @@ class RedisQueue:
                 pass
             raise
 
+    @_fail_closed_redis
     def mark_published(self, row_id: str, post_id: str) -> bool:
         return self._conditional_update(row_id, {"publishing"},
                                         {"status": "published", "post_id": post_id, "last_error": None})
 
+    @_fail_closed_redis
     def mark_failed(self, row_id: str, err: str, dead: bool = False,
                     retry_at: str | None = None) -> bool:
         row = self._read(row_id) or {}
@@ -617,10 +651,12 @@ class RedisQueue:
             patch["scheduled_for"] = retry_at
         return self._conditional_update(row_id, {"publishing"}, patch)
 
+    @_fail_closed_redis
     def retry(self, row_id: str) -> bool:
         return self._conditional_update(row_id, {"queued", "failed", "dead"},
                                         {"status": "queued", "last_error": None})
 
+    @_fail_closed_redis
     def delete(self, row_id: str) -> bool:
         pipe = self._r.pipeline()
         pipe.delete(self._row_key(row_id))
@@ -629,6 +665,7 @@ class RedisQueue:
         results = pipe.execute()
         return bool(results[0])  # 1 if key existed and was deleted
 
+    @_fail_closed_redis
     def cancel_campaign(self, unit_id: str) -> list[dict]:
         """Flip every still-queued row of a campaign to 'canceled'.
 
@@ -671,6 +708,7 @@ class RedisQueue:
                     pass
         return canceled
 
+    @_fail_closed_redis
     def reap_stale_publishing(self, lease_seconds: int) -> list[str]:
         now_epoch = _iso_to_epoch(_now())
         reaped: list[str] = []
@@ -736,7 +774,19 @@ class PostgresQueue:
         # The connection context commits on success and rolls back on error;
         # closing() then releases the socket. Closing alone silently rolled
         # back the schema DDL and every write with psycopg2.
-        with closing(self._conn_factory()) as conn:
+        try:
+            conn = self._conn_factory()
+        except Exception as e:  # noqa: BLE001
+            # QUEUE-2: a mid-operation outage must be an explicit, actionable
+            # backend failure — not a raw driver traceback (which the API
+            # would turn into a 500 and healthz would turn into a crash).
+            # SQL/transaction errors below this line are NOT wrapped: only
+            # "cannot get a connection" means the backend is unavailable.
+            raise QueueBackendError(
+                "postgres",
+                f"connection failed mid-operation: {type(e).__name__}: {e}",
+            ) from e
+        with closing(conn) as conn:
             with conn:
                 yield conn
 
@@ -946,6 +996,8 @@ def get_queue() -> QueueProtocol:
             _QUEUE_SINGLETON = PostgresQueue(_conn_factory)
             log.info("queue backend: Postgres")
             return _QUEUE_SINGLETON
+        except QueueBackendError:
+            raise  # already a wrapped backend failure (e.g. mid-operation wrap)
         except Exception as e:  # noqa: BLE001
             raise QueueBackendError(
                 "postgres",

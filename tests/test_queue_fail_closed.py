@@ -83,8 +83,10 @@ def test_database_url_set_but_unreachable_raises(monkeypatch):
     monkeypatch.setattr(psycopg2, "connect", _boom)
     with pytest.raises(_qbe()) as e:
         get_queue()
-    assert "cannot connect" in str(e.value)
+    # the wrap may come from the constructor's schema connect or from
+    # get_queue's own connect check — both are explicit backend failures
     assert "OperationalError" in str(e.value)
+    assert "Refusing to fall back" in str(e.value)
 
 
 def test_redis_url_set_without_redis_raises(monkeypatch):
