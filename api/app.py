@@ -56,7 +56,7 @@ try:
 
     VERSION = _pkg_version("open-dispatch")
 except Exception:  # not installed as a package (dev checkout) — keep in sync w/ pyproject
-    VERSION = "0.4.1"
+    VERSION = "0.5.0"
 
 # Captured once at import — used to compute server uptime on /healthz.
 _START_TIME = datetime.now(tz=timezone.utc)

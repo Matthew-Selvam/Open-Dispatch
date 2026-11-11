@@ -15,18 +15,24 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="0.4.1"
+VERSION="0.5.0"
+SOURCE_REF=""
 SIGN_ID=""
 NOTARIZE=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --version)   VERSION="$2";   shift 2 ;;
+    # Git ref install.sh should fetch (tag/branch). Defaults to v${VERSION}.
+    # Needed for release-candidate builds: the v0.5.0 tag must not exist
+    # until the release is approved, so RC DMGs build from the release branch.
+    --source-ref) SOURCE_REF="$2"; shift 2 ;;
     --sign)      SIGN_ID="$2";   shift 2 ;;
     --notarize)  NOTARIZE=true;  shift ;;
     *) echo "Unknown: $1"; exit 1 ;;
   esac
 done
+SOURCE_REF="${SOURCE_REF:-v${VERSION}}"
 
 APP_NAME="Open-Dispatch"
 APP_DIR="macos-app/OpenDispatch"
@@ -75,7 +81,7 @@ rm -rf "$BUNDLE_PREFIX"
 # build-time prefix, which stops existing the moment the .app leaves dist/.
 bash install.sh \
   --prefix    "$BUNDLE_PREFIX" \
-  --version   "v${VERSION}" \
+  --version   "$SOURCE_REF" \
   --no-service \
   --bundle
 cp -r "${BUNDLE_PREFIX}/bin"             "${RES_DIR}/bin"
