@@ -672,6 +672,47 @@ Some adapters support an alternative backend via an env var. These backends rout
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md). The adapter contract is one function — adding a platform is ~80 LOC.
 
+## Operations: queue failures and quarantined jobs
+
+### When a queue backend is down
+
+With `REDIS_URL` or `DATABASE_URL` set, Open Dispatch **fails closed**: if that
+backend cannot be reached, the API returns `503` on every dispatch and
+`/healthz` reports `"status": "degraded"` with the exact fix in
+`queue_error`. The worker logs
+`queue backend unavailable: … — retrying in Ns` and keeps polling. Nothing is
+silently moved to a different store. To deliberately switch backends, unset the
+env var (jobs stay in the old store — migrate before switching).
+
+### Recovering a quarantined job
+
+If a worker dies mid-publish (crash, OOM, SIGKILL), the row is stuck in
+`publishing` until the stale-claim reaper (`WORKER_PUBLISHING_LEASE`, default
+900 s) moves it to `failed` with the error
+"publish outcome unknown — verify on the platform before retrying to avoid a
+duplicate post".
+
+The reaper **cannot know** whether the platform accepted the post — so it
+never auto-requeues. To recover:
+
+1. Check the platform for the post (by text/account, or your platform's
+   recent-posts API).
+2. If the post went out: leave the row as-is (or delete it) — retrying would
+   double-post.
+3. If it did not go out: `dispatch queue retry <row-id>` (or the dashboard's
+   Retry button), which re-queues it normally.
+
+Quarantined rows are visible on the health dashboard under recent errors.
+
+### Worker concurrency
+
+`WORKER_CONCURRENCY` (default `1`) bounds how many rows one worker publishes
+in parallel. Claims stay atomic per backend, so rows are never
+double-published, but each slot multiplies load on the platform API — keep it
+at or below your platform rate limits. JSONL saturates around 4 slots (file
+lock contention); Postgres/Redis scale further. An invalid value falls back
+to `1` with a warning in the worker log.
+
 ## Security
 
 See [SECURITY.md](./SECURITY.md). Report vulnerabilities via GitHub Security Advisories (private disclosure).
