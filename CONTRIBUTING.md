@@ -20,7 +20,55 @@ uvicorn api.app:app --reload
 # Open http://localhost:8000
 ```
 
-Tests run in <1s and need zero credentials or network. If you broke a test, you'll know fast.
+Equivalent one-liner (what CI does): `pip install -e ".[test]"`.
+
+Tests run in ~15 seconds (≈385 tests) and need zero credentials or network.
+If you broke a test, you'll know fast.
+
+### Optional: queue-backend development
+
+The JSONL queue works out of the box. To touch the Redis or Postgres
+backends:
+
+```bash
+pip install -e ".[redis,postgres,test]"
+
+# The live-Postgres integration tests (tests/test_postgres_integration.py)
+# run against a disposable database you point them at:
+OPEN_DISPATCH_TEST_POSTGRES_DSN='host=127.0.0.1 port=5499 user=postgres dbname=od_audit' \
+  pytest tests/test_postgres_integration.py
+```
+
+Without the DSN those tests skip — that's expected. Locally you can spin up a
+disposable instance with `initdb`/`pg_ctl` or a throwaway container; never
+point tests at a database you care about.
+
+The skips you'll see on a fresh setup (9 total) are all by design and none
+are hiding a failure:
+
+- 5 × `test_client_auth.py` — MCP bearer-auth tests, need `pip install -e ".[mcp,test]"`
+- 2 × `test_postgres_integration.py` — need `OPEN_DISPATCH_TEST_POSTGRES_DSN`
+- 2 × `test_queue_fail_closed.py` — Postgres connect-failure injections, need
+  the optional `psycopg2` driver installed
+
+CI installs the `mcp` extra in a dedicated job and enforces **zero skips** on
+the MCP auth tests, so the security-relevant surface is always exercised
+there even though your laptop skips it.
+
+### Two gotchas the test suite will catch for you
+
+1. **Every env var the code reads must be documented in `.env.example`.**
+   `tests/test_docs_integrity.py` enforces this — if you add an `os.getenv`, add
+   the variable (with a comment) to `.env.example` in the same PR.
+2. **Relative links in the docs must resolve.** The same test file checks
+   every relative link in the `.md` files at repo root.
+
+## Finding something to work on
+
+Issues labelled [`good first issue`](https://github.com/Matthew-Selvam/Open-Dispatch/labels/good%20first%20issue)
+are scoped, self-contained tasks with acceptance criteria in the issue body.
+Comment on the issue before you start so we don't duplicate work, and mention
+the issue number in your PR (`fixes #NN`).
 
 ## Project layout
 
@@ -71,7 +119,7 @@ That's it. Open a PR.
 
 ## Adding a new queue backend
 
-Implement the `QueueProtocol` in `api/queue.py` and wire backend selection into `get_queue()`. Existing implementations (`JsonlQueue`, `RedisQueue`) are good reference.
+Implement the `QueueProtocol` in `api/queue.py` and wire backend selection into `get_queue()`. Two non-negotiables (see `AUDIT/V050/QUEUE2_REMEDIATION.md` for why): an explicitly configured backend that is unavailable must raise `QueueBackendError` rather than silently falling back, and stale `publishing` claims must be quarantined for operator verification, never auto-requeued. Existing implementations (`JsonlQueue`, `RedisQueue`, `PostgresQueue`) are good reference.
 
 ## Code style
 
@@ -102,8 +150,9 @@ Open an issue with:
 
 ## Reporting security issues
 
-Don't open a public issue. Email security details to the maintainer
-(handle from `pyproject.toml` author field).
+Do **not** open a public issue. Follow [SECURITY.md](./SECURITY.md): report via
+[GitHub private security advisories](https://github.com/Matthew-Selvam/Open-Dispatch/security/advisories/new).
+The latest tagged release receives security patches; older releases do not.
 
 ## License
 
