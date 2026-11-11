@@ -71,9 +71,8 @@ Five ways to run Open-Dispatch. Pick what fits your stack.
 ### 🍺 Homebrew (macOS)
 
 ```bash
-# Add the tap (formula lives in the main repo)
-brew tap matthew-selvam/open-dispatch \
-  https://github.com/Matthew-Selvam/Open-Dispatch
+# Add the tap
+brew tap matthew-selvam/open-dispatch
 brew install open-dispatch
 
 # Set up credentials
