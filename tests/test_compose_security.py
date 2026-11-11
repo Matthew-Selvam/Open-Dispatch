@@ -23,6 +23,23 @@ _requires_docker = pytest.mark.skipif(
 )
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _ensure_compose_env():
+    """docker compose config requires the compose-level env_file (.env).
+
+    CI checkouts have no .env (real deployments create it from .env.example).
+    Create an EMPTY one only when missing, and remove it on teardown —
+    never touch a real operator .env.
+    """
+    env_path = REPO_ROOT / ".env"
+    created = not env_path.exists()
+    if created:
+        env_path.write_text("# empty env for compose config parsing (test-created)\n")
+    yield
+    if created:
+        env_path.unlink(missing_ok=True)
+
+
 def _resolved_config(compose_args: tuple[str, ...] = ()) -> str:
     out = subprocess.run(
         ["docker", "compose", *compose_args, "config"],

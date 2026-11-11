@@ -75,6 +75,9 @@ def test_database_url_set_but_unreachable_raises(monkeypatch):
     """DATABASE_URL set, server unreachable → QueueBackendError, no JSONL fallback."""
     monkeypatch.setenv("DATABASE_URL", "postgresql://user:pw@invalid-host:1/db?connect_timeout=1")
     monkeypatch.delenv("REDIS_URL", raising=False)
+    # The connect-failure path needs the real driver; its absence is covered
+    # separately by test_database_url_set_without_psycopg2_raises.
+    pytest.importorskip("psycopg2")
     import psycopg2
 
     def _boom(*a, **kw):
@@ -135,6 +138,7 @@ def test_no_silent_fallback_after_outage_recovers(monkeypatch):
     up by the next get_queue() call — the singleton is only cached on success."""
     monkeypatch.setenv("DATABASE_URL", "postgresql://od@localhost:5499/od_audit")
     monkeypatch.delenv("REDIS_URL", raising=False)
+    pytest.importorskip("psycopg2")
     import psycopg2
 
     calls = {"n": 0}
