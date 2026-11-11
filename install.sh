@@ -120,8 +120,17 @@ fi
 info "Installing to ${INSTALL_DIR} …"
 mkdir -p "$INSTALL_DIR" "$DATA_DIR" "${PREFIX}/bin"
 
-# Copy source
-cp -r "$TMP_DIR"/. "$INSTALL_DIR/"
+# Copy source. tar, not cp: a release tarball can contain symlinks (the
+# DMG staging tree links Applications → /Applications), and cp -r FOLLOWS
+# them — it once copied the entire /Applications folder into the install.
+# dist/, .git/ and build/ are development artifacts, not runtime files.
+mkdir -p "$INSTALL_DIR"
+tar -cf - \
+  --exclude './dist' \
+  --exclude './.git' \
+  --exclude './build' \
+  --exclude './.build' \
+  -C "$TMP_DIR" . | tar -xf - -C "$INSTALL_DIR"
 
 # Create virtualenv
 VENV="${INSTALL_DIR}/venv"
