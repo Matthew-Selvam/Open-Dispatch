@@ -2,7 +2,7 @@ class OpenDispatch < Formula
   desc "One API to dispatch your content anywhere — self-hostable cross-poster"
   homepage "https://open-dispatch-landing.vercel.app"
   url "https://github.com/Matthew-Selvam/Open-Dispatch/archive/refs/tags/v0.4.1.tar.gz"
-  sha256 "11ed073ffdcf65cb3c949d7486d14f59bdb2d0d5068d7adf21ebace500ab9298"
+  sha256 "22f9f91a81858fa9b51bf22d52d51bae08b6768bb56217fd9ef72281ff106284"
   license "MIT"
   version "0.4.1"
 
