@@ -63,7 +63,7 @@ bash install.sh
 |------|---------|-------------|
 | `--prefix DIR` | `~/.local` | Base prefix; binaries land in `$PREFIX/bin`, app in `$PREFIX/opt/open-dispatch` |
 | `--install-dir DIR` | `$PREFIX/opt/open-dispatch` | Install the app itself at this exact path |
-| `--version TAG` | `v0.4.1` | Release tag (or branch name) to install |
+| `--version TAG` | `v0.5.0` | Release tag (or branch name) to install |
 | `--data-dir DIR` | `~/.open-dispatch` | Where to store queue + .env |
 | `--no-service` | — | Skip launchd/systemd unit setup |
 
@@ -103,7 +103,7 @@ xcode-select --install
 brew install create-dmg     # optional (for prettier window)
 
 bash scripts/make-dmg.sh
-# Output: dist/Open-Dispatch-0.4.1.dmg
+# Output: dist/Open-Dispatch-0.5.0.dmg
 ```
 
 ---

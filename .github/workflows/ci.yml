@@ -49,10 +49,62 @@ jobs:
           names = set(zipfile.ZipFile(wheel).namelist())
           for required in ('profiles.py', 'mcp_server.py', 'web/templates/base.html', 'web/static/style.css'):
               assert required in names, required
+          meta = zipfile.ZipFile(wheel).read(
+              [n for n in zipfile.ZipFile(wheel).namelist() if n.endswith('METADATA')][0]).decode()
+          assert 'Provides-Extra: mcp' in meta, 'wheel must declare the mcp extra'
+          PY
+
+      # CI-1 part 1: the BASE installation must work without mcp, and core
+      # imports must never pull it in. mcp_server.py must fail with the
+      # actionable install hint, not an ImportError traceback.
+      - name: Verify base install works without mcp
+        run: |
+          python - <<'PY'
+          import importlib, subprocess, sys
+          for mod in ("api.app", "api.queue", "cli", "profiles", "scheduler.worker"):
+              importlib.import_module(mod)
+          print("core imports OK without mcp")
+          try:
+              import mcp  # noqa: F401
+              print("NOTE: mcp is installed in this environment; base-install check is weaker")
+          except ImportError:
+              r = subprocess.run([sys.executable, "mcp_server.py"], capture_output=True, text=True)
+              assert r.returncode == 1, f"mcp_server must exit 1 with a useful hint, got {r.returncode}"
+              assert "open-dispatch[mcp]" in (r.stderr + r.stdout), "must print the install hint"
+              print("mcp_server missing-dep error OK:", (r.stderr.strip().splitlines() or [''])[0])
           PY
 
       - name: Run tests
         run: pytest -q --tb=short
+
+  # CI-1 part 2: the MCP-enabled installation must be exercised in CI — the
+  # 5 bearer-token auth tests in tests/test_client_auth.py are security-
+  # relevant and were silently skipped on every run before v0.5.0. This job
+  # uses a clean pip environment (the package + its declared extras only, no
+  # global site-packages) and FAILS if any test in that file skips.
+  mcp:
+    name: MCP extra — clean env, zero security-test skips
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package + mcp extra (clean environment)
+        run: |
+          python -m pip install --upgrade pip
+          pip install '.[mcp,test]'
+      - name: MCP import boundary + server startup surface
+        run: python -c "import mcp_server; print('mcp server import OK')"
+      - name: Run MCP auth tests — zero skips allowed
+        run: |
+          pytest tests/test_client_auth.py -v --tb=short | tee /tmp/mcp_tests.txt
+          if grep -q 'SKIPPED\|skipped' /tmp/mcp_tests.txt; then
+            echo "✘ security-relevant MCP tests were skipped — the mcp extra is not fully installed"
+            exit 1
+          fi
+          echo "✓ all MCP auth tests ran with zero skips"
 
   n8n-node:
     name: n8n node — TypeScript build

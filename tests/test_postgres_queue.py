@@ -9,6 +9,8 @@ real Postgres are a separate suite (CI-only).
 from __future__ import annotations
 
 import json
+
+import pytest
 from datetime import datetime, timezone
 
 from api.queue import PostgresQueue
@@ -325,13 +327,12 @@ def test_cancel_campaign_generates_guarded_update_returning():
     assert rows[0]["platform"] == "twitter:default"
 
 
-def test_factory_falls_back_when_database_url_unreachable(monkeypatch):
-    """DATABASE_URL set but psycopg2 import or connect fails → JSONL."""
+def test_factory_fails_closed_when_database_url_unreachable(monkeypatch):
+    """DATABASE_URL set but psycopg2 import or connect fails → QueueBackendError
+    (QUEUE-2). A silent JSONL fallback would split the queue across stores."""
     monkeypatch.setenv("DATABASE_URL", "postgres://nonexistent.invalid:5432/x")
     monkeypatch.delenv("REDIS_URL", raising=False)
-    from api.queue import JsonlQueue, _reset_singleton_for_tests, get_queue
+    from api.queue import QueueBackendError, _reset_singleton_for_tests, get_queue
     _reset_singleton_for_tests()
-    q = get_queue()
-    # Either psycopg2 isn't installed (returns JsonlQueue) or it is but can't
-    # connect (also JsonlQueue). Both acceptable.
-    assert isinstance(q, JsonlQueue)
+    with pytest.raises(QueueBackendError):
+        get_queue()

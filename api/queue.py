@@ -26,6 +26,7 @@ and API code never need to know which one is active.
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
@@ -37,6 +38,30 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, Protocol
 
 log = logging.getLogger("open-dispatch.queue")
+
+
+class QueueBackendError(RuntimeError):
+    """An explicitly configured queue backend is unavailable or unusable.
+
+    Raised instead of silently falling back to JSONL: when an operator
+    configures DATABASE_URL or REDIS_URL they are choosing a durable store,
+    and a fallback to a *different* store would split the queue — jobs
+    enqueued during the outage would land in JSONL while older jobs sat in
+    the unreachable backend, and they could never be reconciled.
+
+    Callers should surface this to the operator (API: 503 with the message;
+    worker: log and retry the next poll). A backend that is unavailable
+    must be loud, not silent.
+    """
+
+    def __init__(self, backend: str, detail: str) -> None:
+        self.backend = backend
+        self.detail = detail
+        super().__init__(
+            f"queue backend {backend!r} is configured but unusable: {detail}. "
+            "Refusing to fall back to another store — fix the configuration "
+            "or unset the backend variable to use the JSONL queue."
+        )
 
 try:
     import fcntl as _fcntl  # noqa: F401  (POSIX)
@@ -169,8 +194,17 @@ def _read_all() -> list[dict]:
                 except json.JSONDecodeError:
                     # A single torn write (crash mid-append, disk issue) must
                     # not take the whole queue down — skip the bad line but
-                    # keep serving everything else.
-                    log.warning("skipping corrupt queue line %d in %s", lineno, JSONL_PATH)
+                    # keep serving everything else. The raw line is preserved
+                    # in a sidecar so the job is never silently lost: an
+                    # operator (or the enqueue path) can recover it.
+                    log.warning("skipping corrupt queue line %d in %s; "
+                                "preserved in %s", lineno, JSONL_PATH,
+                                JSONL_PATH.with_suffix(".jsonl.corrupt"))
+                    try:
+                        with JSONL_PATH.with_suffix(".jsonl.corrupt").open("a") as c:
+                            c.write(line + "\n")
+                    except OSError:
+                        pass  # the sidecar is best-effort; never block reads
     return rows
 
 
@@ -375,11 +409,48 @@ def _new_row(unit_dict: dict, platform_key: str, scheduled_for: str) -> dict:
 # the schema minimal so anyone can `redis-cli MONITOR` and understand what
 # the queue is doing.
 
+def _fail_closed_redis(fn):
+    """QUEUE-2: wrap Redis connection/timeout failures in QueueBackendError.
+
+    Only transport-class failures (redis.exceptions.ConnectionError /
+    TimeoutError, matched by module+name so the optional redis import is not
+    needed here) are wrapped: WatchError-style contention and genuine state
+    errors keep their original semantics. Callers then get the same
+    actionable backend-failure contract as the Postgres backend.
+    """
+    @functools.wraps(fn)
+    def wrapper(self, *a, **kw):
+        try:
+            return fn(self, *a, **kw)
+        except QueueBackendError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            if (type(e).__module__.startswith("redis")
+                    and type(e).__name__ in {"ConnectionError", "TimeoutError"}):
+                raise QueueBackendError(
+                    "redis",
+                    f"connection failed mid-operation: {type(e).__name__}: {e}",
+                ) from e
+            raise
+    return wrapper
+
+
 class RedisQueue:
     """Redis-backed queue. Set REDIS_URL to opt in.
 
     Multi-worker safe via SETNX-style claim during mark_publishing.
     """
+
+    # WatchError (redis-py) is raised when the watched key changed between
+    # WATCH and EXEC — a benign contention signal, not a backend failure.
+    # The redis package is an optional extra, so the import is lazy: the
+    # fallback is a sentinel class that never matches, so the
+    # `except WatchError` branch is dead code only when redis is absent.
+    try:
+        from redis.exceptions import WatchError as _WatchError  # noqa: WPS433
+    except ImportError:  # pragma: no cover
+        class _WatchError(Exception):  # type: ignore[no-redef]
+            pass
 
     KEY_PREFIX = "dispatch"
 
@@ -407,6 +478,7 @@ class RedisQueue:
         row["updated_at"] = _now()
         self._r.set(self._row_key(row["id"]), json.dumps(row, ensure_ascii=False))
 
+    @_fail_closed_redis
     def enqueue(self, unit_dict: dict, platform_key: str, scheduled_for: str) -> str:
         row = _new_row(unit_dict, platform_key, scheduled_for)
         pipe = self._r.pipeline()
@@ -416,6 +488,7 @@ class RedisQueue:
         pipe.execute()
         return row["id"]
 
+    @_fail_closed_redis
     def list_all(self, status: str | None = None) -> list[dict]:
         ids = self._r.smembers(self._all_key())
         if not ids:
@@ -434,9 +507,11 @@ class RedisQueue:
                 rows.append(row)
         return rows
 
+    @_fail_closed_redis
     def get(self, row_id: str) -> dict | None:
         return self._read(row_id)
 
+    @_fail_closed_redis
     def list_due(self, now_iso: str) -> list[dict]:
         max_score = _iso_to_epoch(now_iso)
         # ZRANGEBYSCORE 0 now → ids whose scheduled_for ≤ now
@@ -464,6 +539,7 @@ class RedisQueue:
         else:
             self._r.zrem(self._due_key(), row_id)
 
+    @_fail_closed_redis
     def mark_publishing(self, row_id: str) -> bool:
         """Claim a due row. A row backed off to a future time cannot be claimed."""
         # Optimistic transaction makes the queued check and state transition atomic.
@@ -488,14 +564,26 @@ class RedisQueue:
             pipe.zrem(self._due_key(), row_id)
             pipe.execute()
             return True
-        except Exception:
+        except self._WatchError:
             # A concurrent cancellation/claim loses this attempt; the worker's
             # next poll will observe the current state.
             try:
                 pipe.reset()
             except Exception:
                 pass
-        return False
+            return False
+        except Exception as e:
+            # QUEUE-2 fail-closed: an outage here is NOT a lost claim. Returning
+            # False on a connection error would make the worker skip the row
+            # ("claim lost") while never reporting the backend is down — the
+            # operator would only see a queue that never moves. Let connection
+            # errors propagate so the worker logs them and the next poll
+            # retries the connection.
+            try:
+                pipe.reset()
+            except Exception:
+                pass
+            raise
 
     def _conditional_update(self, row_id: str, allowed: set[str], patch: dict[str, Any]) -> bool:
         pipe = self._r.pipeline()
@@ -528,19 +616,30 @@ class RedisQueue:
                 pipe.zrem(self._due_key(), row_id)
             pipe.execute()
             return True
+        except self._WatchError:
+            # Only a concurrent write is contention — a retryable, benign
+            # False. Every other error (connection, timeout, auth) must
+            # propagate: swallowing it in mark_published would make the
+            # worker believe the row was not marked published when the write
+            # never happened, silently masking the outage.
+            try:
+                pipe.reset()
+            except Exception:
+                pass
+            return False
         except Exception as exc:
             try:
                 pipe.reset()
             except Exception:
                 pass
-            if exc.__class__.__name__ in {"WatchError", "ConnectionError", "TimeoutError"}:
-                return False
             raise
 
+    @_fail_closed_redis
     def mark_published(self, row_id: str, post_id: str) -> bool:
         return self._conditional_update(row_id, {"publishing"},
                                         {"status": "published", "post_id": post_id, "last_error": None})
 
+    @_fail_closed_redis
     def mark_failed(self, row_id: str, err: str, dead: bool = False,
                     retry_at: str | None = None) -> bool:
         row = self._read(row_id) or {}
@@ -552,10 +651,12 @@ class RedisQueue:
             patch["scheduled_for"] = retry_at
         return self._conditional_update(row_id, {"publishing"}, patch)
 
+    @_fail_closed_redis
     def retry(self, row_id: str) -> bool:
         return self._conditional_update(row_id, {"queued", "failed", "dead"},
                                         {"status": "queued", "last_error": None})
 
+    @_fail_closed_redis
     def delete(self, row_id: str) -> bool:
         pipe = self._r.pipeline()
         pipe.delete(self._row_key(row_id))
@@ -564,6 +665,7 @@ class RedisQueue:
         results = pipe.execute()
         return bool(results[0])  # 1 if key existed and was deleted
 
+    @_fail_closed_redis
     def cancel_campaign(self, unit_id: str) -> list[dict]:
         """Flip every still-queued row of a campaign to 'canceled'.
 
@@ -606,6 +708,7 @@ class RedisQueue:
                     pass
         return canceled
 
+    @_fail_closed_redis
     def reap_stale_publishing(self, lease_seconds: int) -> list[str]:
         now_epoch = _iso_to_epoch(_now())
         reaped: list[str] = []
@@ -671,7 +774,19 @@ class PostgresQueue:
         # The connection context commits on success and rolls back on error;
         # closing() then releases the socket. Closing alone silently rolled
         # back the schema DDL and every write with psycopg2.
-        with closing(self._conn_factory()) as conn:
+        try:
+            conn = self._conn_factory()
+        except Exception as e:  # noqa: BLE001
+            # QUEUE-2: a mid-operation outage must be an explicit, actionable
+            # backend failure — not a raw driver traceback (which the API
+            # would turn into a 500 and healthz would turn into a crash).
+            # SQL/transaction errors below this line are NOT wrapped: only
+            # "cannot get a connection" means the backend is unavailable.
+            raise QueueBackendError(
+                "postgres",
+                f"connection failed mid-operation: {type(e).__name__}: {e}",
+            ) from e
+        with closing(conn) as conn:
             with conn:
                 yield conn
 
@@ -847,6 +962,16 @@ def get_queue() -> QueueProtocol:
     """Return the active queue backend. Caches a single instance.
 
     Selection order: DATABASE_URL → REDIS_URL → JSONL.
+
+    FAIL-CLOSED (QUEUE-2): when DATABASE_URL or REDIS_URL is explicitly set
+    but that backend cannot be reached (or its driver is missing), this
+    raises QueueBackendError instead of silently falling back to JSONL.
+    A silent fallback would split the queue across two stores — jobs
+    enqueued during the outage would live in JSONL while the configured
+    backend held the rest, and they could never be reconciled. Callers
+    (API, worker) must surface the failure; a backend that becomes
+    available again is picked up on the next get_queue() call because the
+    singleton is only cached after a successful construction.
     """
     global _QUEUE_SINGLETON
 
@@ -859,17 +984,26 @@ def get_queue() -> QueueProtocol:
             return _QUEUE_SINGLETON
         try:
             import psycopg2  # noqa: WPS433
-        except ImportError:
-            log.warning("DATABASE_URL set but psycopg2 not installed; trying Redis/JSONL")
-        else:
-            try:
-                def _conn_factory():
-                    return psycopg2.connect(db_url)
-                _QUEUE_SINGLETON = PostgresQueue(_conn_factory)
-                log.info("queue backend: Postgres")
-                return _QUEUE_SINGLETON
-            except Exception as e:  # noqa: BLE001
-                log.warning("Postgres connect failed (%s); trying Redis/JSONL", e)
+        except ImportError as e:
+            raise QueueBackendError(
+                "postgres",
+                "DATABASE_URL is set but the psycopg2 driver is not installed "
+                "(pip install psycopg2-binary or the 'open-dispatch[postgres]' extra)",
+            ) from e
+        try:
+            def _conn_factory():
+                return psycopg2.connect(db_url)
+            _QUEUE_SINGLETON = PostgresQueue(_conn_factory)
+            log.info("queue backend: Postgres")
+            return _QUEUE_SINGLETON
+        except QueueBackendError:
+            raise  # already a wrapped backend failure (e.g. mid-operation wrap)
+        except Exception as e:  # noqa: BLE001
+            raise QueueBackendError(
+                "postgres",
+                f"cannot connect to the database (check DATABASE_URL, host "
+                f"reachability, and credentials): {type(e).__name__}: {e}",
+            ) from e
 
     # Then Redis
     if redis_url:
@@ -877,19 +1011,26 @@ def get_queue() -> QueueProtocol:
             return _QUEUE_SINGLETON
         try:
             import redis  # noqa: WPS433
-        except ImportError:
-            log.warning("REDIS_URL set but `redis` package not installed; falling back to JSONL")
-        else:
-            try:
-                client = redis.Redis.from_url(redis_url, decode_responses=False)
-                client.ping()
-                _QUEUE_SINGLETON = RedisQueue(client)
-                log.info("queue backend: Redis (%s)", redis_url)
-                return _QUEUE_SINGLETON
-            except Exception as e:  # noqa: BLE001
-                log.warning("Redis connect failed (%s); falling back to JSONL", e)
+        except ImportError as e:
+            raise QueueBackendError(
+                "redis",
+                "REDIS_URL is set but the redis package is not installed "
+                "(pip install redis or the 'open-dispatch[redis]' extra)",
+            ) from e
+        try:
+            client = redis.Redis.from_url(redis_url, decode_responses=False)
+            client.ping()
+            _QUEUE_SINGLETON = RedisQueue(client)
+            log.info("queue backend: Redis (%s)", redis_url)
+            return _QUEUE_SINGLETON
+        except Exception as e:  # noqa: BLE001
+            raise QueueBackendError(
+                "redis",
+                f"cannot connect to the Redis server (check REDIS_URL and "
+                f"that the server is reachable): {type(e).__name__}: {e}",
+            ) from e
 
-    # Fallback: JSONL
+    # JSONL is the default only when no durable backend is configured.
     return JsonlQueue()
 
 

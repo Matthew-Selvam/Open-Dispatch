@@ -118,7 +118,7 @@ Advanced usage:
 ```bash
 bash install.sh \
   --prefix   /opt/open-dispatch \   # install location (default: ~/.local)
-  --version  v0.4.1 \               # specific tag (default: main)
+  --version  v0.5.0 \               # specific tag (default: main)
   --data-dir /var/open-dispatch \   # data / .env location
   --no-service                      # skip auto-start setup
 ```
@@ -142,6 +142,46 @@ open http://localhost:8000
 # Optional: add Redis for multi-worker throughput
 docker compose --profile redis up -d
 ```
+
+> **SEC-1 — the API binds to loopback by default.** The compose file maps
+> `127.0.0.1:8000:8000`, so the API is reachable **only from the host
+> machine**. That is deliberate: with `OPEN_DISPATCH_API_TOKEN` unset the API
+> is unauthenticated, and binding all interfaces would let anyone who can
+> reach the host create profiles, queue posts, and read queue content.
+> Set a strong token **and** change the mapping before serving remotely:
+> see [Exposing the API remotely](#exposing-the-api-remotely).
+
+### Exposing the API remotely
+
+The default Compose deployment is loopback-only (see SEC-1 above). To serve
+other machines you need **both** of:
+
+1. **A bearer token.** Generate one and put it in `.env`:
+
+   ```bash
+   OPEN_DISPATCH_API_TOKEN=$(openssl rand -hex 32)
+   ```
+
+2. **A TLS-terminating reverse proxy** (nginx, Caddy, Traefik) in front of
+   the container. Do **not** simply change the port mapping to `"8000:8000"`
+   and expose the raw container — HTTP is plaintext and the API allows CORS-
+   gated browser use. A minimal Caddy example:
+
+   ```
+   dispatch.example.com {
+       reverse_proxy 127.0.0.1:8000
+   }
+   ```
+
+   The proxy must live on the same host as the container (so `127.0.0.1`
+   still applies) or join the compose network directly. Restrict proxy
+   routes to what clients need; the queue/API surface is not designed for
+   anonymous public exposure.
+
+Then change the compose mapping to `"8000:8000"` **or** remove `ports:` and
+let the proxy join the compose network. Verify from the host with
+`ss -tlnp | grep 8000` (Linux) or `lsof -nP -iTCP:8000 -sTCP:LISTEN` (macOS)
+that nothing else is listening on `0.0.0.0`.
 
 Multi-arch image (amd64 + arm64). Non-root `dispatch` user. No compiler tools in the final layer.
 
@@ -173,7 +213,7 @@ Best for Python developers who want to embed Open-Dispatch in an existing codeba
 
 ### 🍎 macOS menubar app
 
-1. Download `Open-Dispatch-0.4.1.dmg` from [GitHub Releases](https://github.com/Matthew-Selvam/Open-Dispatch/releases)
+1. Download `Open-Dispatch-0.5.0.dmg` from [GitHub Releases](https://github.com/Matthew-Selvam/Open-Dispatch/releases)
 2. Drag `Open-Dispatch.app` to `/Applications`
 3. **First launch:** right-click → **Open** → click **Open** in the dialog (unsigned build — bypasses Gatekeeper once)
 4. A status icon appears in your menu bar
@@ -189,7 +229,7 @@ Build it yourself:
 
 ```bash
 bash scripts/make-dmg.sh
-# → dist/Open-Dispatch-0.4.1.dmg
+# → dist/Open-Dispatch-0.5.0.dmg
 
 # With code-signing + notarization:
 bash scripts/make-dmg.sh \
@@ -431,6 +471,8 @@ scheduler/worker.py
 ```
 
 - **Queue**: JSONL on disk (default), Redis (`REDIS_URL`), or Postgres (`DATABASE_URL`). All three implement `QueueProtocol` — swap with a single env var, no code changes.
+- **Fail closed**: when `REDIS_URL` or `DATABASE_URL` is set but that backend is unreachable, Open Dispatch raises an explicit error instead of silently falling back to JSONL. The API answers `503 Service Unavailable` with the fix in the response; the worker logs `queue backend unavailable: … — retrying in Ns` and keeps polling. Nothing is ever enqueued to a different store than the one you configured. Unset the env var to deliberately switch to the JSONL queue.
+- **Queue health**: `/healthz` returns `200 {"status": "ok", …}` when the queue works and `503 {"status": "degraded", "queue_error": "…"}` when the API is up but the configured backend is down — a running API and a functioning queue are reported separately.
 - **Retry**: exponential backoff (`WORKER_BACKOFF_BASE × 2^(attempts-1)` + jitter), gives up after `WORKER_MAX_ATTEMPTS`.
 - **State machine**: `queued → publishing → published | failed | dead`
 - **No-cloud option**: everything runs from a single `python` process — `python cli.py worker` alongside `uvicorn`.
@@ -629,6 +671,47 @@ Some adapters support an alternative backend via an env var. These backends rout
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md). The adapter contract is one function — adding a platform is ~80 LOC.
+
+## Operations: queue failures and quarantined jobs
+
+### When a queue backend is down
+
+With `REDIS_URL` or `DATABASE_URL` set, Open Dispatch **fails closed**: if that
+backend cannot be reached, the API returns `503` on every dispatch and
+`/healthz` reports `"status": "degraded"` with the exact fix in
+`queue_error`. The worker logs
+`queue backend unavailable: … — retrying in Ns` and keeps polling. Nothing is
+silently moved to a different store. To deliberately switch backends, unset the
+env var (jobs stay in the old store — migrate before switching).
+
+### Recovering a quarantined job
+
+If a worker dies mid-publish (crash, OOM, SIGKILL), the row is stuck in
+`publishing` until the stale-claim reaper (`WORKER_PUBLISHING_LEASE`, default
+900 s) moves it to `failed` with the error
+"publish outcome unknown — verify on the platform before retrying to avoid a
+duplicate post".
+
+The reaper **cannot know** whether the platform accepted the post — so it
+never auto-requeues. To recover:
+
+1. Check the platform for the post (by text/account, or your platform's
+   recent-posts API).
+2. If the post went out: leave the row as-is (or delete it) — retrying would
+   double-post.
+3. If it did not go out: `dispatch queue retry <row-id>` (or the dashboard's
+   Retry button), which re-queues it normally.
+
+Quarantined rows are visible on the health dashboard under recent errors.
+
+### Worker concurrency
+
+`WORKER_CONCURRENCY` (default `1`) bounds how many rows one worker publishes
+in parallel. Claims stay atomic per backend, so rows are never
+double-published, but each slot multiplies load on the platform API — keep it
+at or below your platform rate limits. JSONL saturates around 4 slots (file
+lock contention); Postgres/Redis scale further. An invalid value falls back
+to `1` with a warning in the worker log.
 
 ## Security
 

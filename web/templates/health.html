@@ -23,7 +23,18 @@
   </div>
 </div>
 
-{# ── Worker liveness strip ──────────────────────────────────────────────── #}
+{# ── Queue backend down ───────────────────────────────────────────────── #}
+{% if queue_unavailable %}
+<div class="worker-strip worker-warn">
+  <span class="worker-icon">✘</span>
+  <span class="worker-label">
+    Queue backend down: <strong>{{ backend }}</strong> is configured but unusable.
+  </span>
+  <span class="worker-hint small mono">{{ queue_unavailable }}</span>
+</div>
+{% endif %}
+
+{# ── Worker liveness strip ─────────────────────────────────────────────── #}
 <div class="worker-strip {% if worker.running %}worker-ok{% else %}worker-warn{% endif %}">
   <span class="worker-icon">{% if worker.running %}●{% else %}○{% endif %}</span>
   <span class="worker-label">

@@ -2,7 +2,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # Open-Dispatch installer
 # Usage:  curl -fsSL https://raw.githubusercontent.com/Matthew-Selvam/Open-Dispatch/main/install.sh | bash
-# Or:     bash install.sh [--prefix /usr/local] [--version v0.4.1] [--no-service]
+# Or:     bash install.sh [--prefix /usr/local] [--version v0.5.0] [--no-service]
 # ──────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -23,7 +23,7 @@ error()   { echo "${RED}✗${RESET} $*" >&2; exit 1; }
 # Default to ~/.local so a plain `curl | bash` never needs sudo — README and
 # INSTALL_METHODS document this as the default.
 PREFIX="${PREFIX:-${HOME}/.local}"
-VERSION="${OPEN_DISPATCH_VERSION:-v0.4.1}"
+VERSION="${OPEN_DISPATCH_VERSION:-v0.5.0}"
 INSTALL_DIR="${INSTALL_DIR:-${PREFIX}/opt/open-dispatch}"
 DATA_DIR="${DATA_DIR:-${HOME}/.open-dispatch}"
 INSTALL_SERVICE=true

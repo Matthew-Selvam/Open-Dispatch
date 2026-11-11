@@ -5,7 +5,46 @@ All notable changes to Open-Dispatch are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased] — v0.5.0 hardening (release candidate, not yet published)
+
+### Fixed
+- **QUEUE-2 — queue backends fail closed.** With `DATABASE_URL` or `REDIS_URL` set but that
+  backend unreachable (or its driver missing), Open Dispatch now raises an explicit
+  `QueueBackendError` with the operator fix instead of silently falling back to the JSONL
+  store — a fallback split the queue across two stores that could never be reconciled. The
+  API answers `503` with `Retry-After` (no bare 500 traceback); `/healthz` distinguishes a
+  running API (`200`) from a functioning queue (`503 degraded` + `queue_error`); the worker
+  logs the outage and retries each poll, with deterministic recovery and no silent store
+  switch. Redis mid-operation connection failures are wrapped in the same actionable error
+  (previously swallowed as a "claim lost", masking outages); JSONL torn-write lines are
+  preserved verbatim in `queue.jsonl.corrupt` for manual recovery instead of being silently
+  dropped, and unreadable queue files raise instead of reading as an empty queue.
+- **SEC-1 — Docker deployments no longer expose the API by default.** The default compose
+  maps `127.0.0.1:8000:8000` (was `8000:8000` on all interfaces with an unauthenticated API).
+  A production-oriented `docker-compose.prod.yml` publishes **zero** host ports (reverse
+  proxy joins the compose network) and documents the required bearer token. README gains a
+  pre-launch security note and an "Exposing the API remotely" section.
+
+### Added
+- **PERF-2 — bounded worker concurrency.** `WORKER_CONCURRENCY` (default `1`, the old serial
+  behaviour) publishes up to N due rows in parallel on a bounded thread pool. Claims remain
+  atomic per backend, so rows are never double-published; a slow adapter (e.g. the Threads
+  settle wait) now blocks only its own slot instead of delaying every unrelated platform.
+  Invalid values fall back to `1` with a loud warning. Benchmarked on synthetic workloads
+  against live JSONL/PostgreSQL/Redis (zero duplicate claims at every level); see
+  `AUDIT/V050/benchmark_results.md`.
+- **CI-1 — the MCP extra is exercised in CI.** A dedicated clean-environment job installs
+  `.[mcp,test]`, imports `mcp_server`, and runs the 5 MCP bearer-token auth tests with
+  **zero skips allowed** — they were silently skipped on every CI run before. The base job
+  now also asserts core imports work without `mcp`, that `mcp_server.py` exits 1 with the
+  actionable install hint, and that the wheel declares `Provides-Extra: mcp`.
+- `scripts/benchmark_worker.py` — reproducible synthetic worker benchmark across backends
+  and concurrency levels.
+- `docker-compose.prod.yml` — production-oriented compose (no published ports, healthcheck).
+- Operator docs: queue-failure behaviour, quarantined-job recovery, worker concurrency
+  (README → "Operations").
+
+## [0.4.1] — 2026-06-10
 
 ### Fixed
 - **Adapters now apply the "post went out, never retry" rule consistently (subagent review round).**
@@ -26,7 +65,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (which Telegram rejects with "can't parse entities", dead-lettering partially-sent posts).
 - **Worker: stale-claim reaper.** A hard crash mid-publish (SIGKILL, OOM, power loss) left the
   row in "publishing" forever, unrecoverable by hand. `WORKER_PUBLISHING_LEASE` (default 900s)
-  re-queues such rows at the top of every poll, across all three queue backends.
+  quarantines such rows into "failed" (outcome unknown — verify on the platform
+  before retrying) at the top of every poll, across all three queue backends; it
+  never auto-requeues, because an automatic retry could double-post.
 - **Worker: webhook edge cases.** A webhook URL with a malformed port raised out of `run_once`
   and aborted the whole poll cycle; IPv6 targets were silently dropped (unbracketed IP in the
   pinned URL); non-default ports now get a correct `Host: host:port` header.
