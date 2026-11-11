@@ -53,7 +53,9 @@ BACKOFF_BASE = int(os.getenv("WORKER_BACKOFF_BASE", "30"))  # seconds
 # A hard crash mid-publish (SIGKILL, OOM, power loss) leaves the row in
 # "publishing" forever — the try/except around _publish cannot catch it, and
 # retry() only accepts queued/failed/dead. Rows older than this lease are
-# re-queued at the top of every poll loop.
+# quarantined into "failed" at the top of every poll loop: the reaper cannot
+# know whether the platform accepted the post, so it must not auto-requeue
+# (that would double-post). The operator verifies and retries explicitly.
 PUBLISHING_LEASE = int(os.getenv("WORKER_PUBLISHING_LEASE", "900"))
 
 
@@ -156,7 +158,8 @@ def run_once() -> int:
     try:
         reaped = q.reap_stale_publishing(PUBLISHING_LEASE)
         if reaped:
-            log.warning("reaped %d stale publishing claim(s): %s",
+            log.warning("quarantined %d stale publishing claim(s) as failed "
+                        "(verify on the platform before retrying): %s",
                         len(reaped), ", ".join(reaped[:5]))
     except Exception as e:  # noqa: BLE001
         log.warning("stale-claim reaper failed: %s", e)

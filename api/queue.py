@@ -89,6 +89,15 @@ def _now() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
 
 
+# Shared by every backend's reap_stale_publishing: the reaper cannot know
+# whether the platform accepted the post before the worker died, so the row
+# must be quarantined ("failed") rather than auto-re-queued (a duplicate).
+_STALE_CLAIM_ERROR = (
+    "stale publishing claim reaped: publish outcome unknown — "
+    "verify on the platform before retrying to avoid a duplicate post"
+)
+
+
 def _iso_to_epoch(iso: str) -> float:
     """ISO-8601 to Unix epoch float. Handles trailing Z."""
     return datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
@@ -126,12 +135,19 @@ class QueueProtocol(Protocol):
     def cancel_campaign(self, unit_id: str) -> list[dict]: ...
 
     def reap_stale_publishing(self, lease_seconds: int) -> list[str]:
-        """Re-queue rows stuck in "publishing" older than the lease.
+        """Quarantine rows stuck in "publishing" older than the lease.
 
         A hard crash mid-publish (SIGKILL, OOM, power loss) cannot be caught
         by the worker's try/except, so the row would sit in "publishing"
         forever — and retry() only accepts queued/failed/dead, so it could not
-        even be re-queued by hand. Returns the re-queued row ids.
+        even be re-queued by hand.
+
+        The reaper cannot know whether the platform already accepted the
+        post, so the row is moved to "failed" (never straight back to
+        "queued"): an automatic retry could double-post. The operator sees
+        the "verify before retrying" error and re-queues explicitly with
+        retry() once they have confirmed the outcome on the platform.
+        Returns the quarantined row ids.
         """
         ...
 
@@ -324,8 +340,8 @@ class JsonlQueue:
                 except (ValueError, TypeError):
                     age = lease_seconds + 1  # unparseable timestamp: reap
                 if age > lease_seconds:
-                    r["status"] = "queued"
-                    r["last_error"] = "stale publishing claim reaped"
+                    r["status"] = "failed"
+                    r["last_error"] = _STALE_CLAIM_ERROR
                     r["updated_at"] = _now()
                     reaped.append(r["id"])
             if reaped:
@@ -604,7 +620,7 @@ class RedisQueue:
                 age = lease_seconds + 1
             if age > lease_seconds and self._conditional_update(
                 row_id, {"publishing"},
-                {"status": "queued", "last_error": "stale publishing claim reaped"},
+                {"status": "failed", "last_error": _STALE_CLAIM_ERROR},
             ):
                 reaped.append(row_id)
         return reaped
@@ -650,12 +666,14 @@ class PostgresQueue:
         self._conn_factory = conn_factory
         self._ensure_schema()
 
+    @contextmanager
     def _conn(self):
-        # closing() matters: `with conn` commits/rolls back but does NOT close
-        # the connection, so every operation here relied on refcount
-        # finalization to reap the socket (connection leak + full TCP/auth
-        # handshake per operation).
-        return closing(self._conn_factory())
+        # The connection context commits on success and rolls back on error;
+        # closing() then releases the socket. Closing alone silently rolled
+        # back the schema DDL and every write with psycopg2.
+        with closing(self._conn_factory()) as conn:
+            with conn:
+                yield conn
 
     def _ensure_schema(self) -> None:
         ddl = f"""
@@ -806,15 +824,17 @@ class PostgresQueue:
             return [self._row_to_dict(r) for r in cur.fetchall()]
 
     def reap_stale_publishing(self, lease_seconds: int) -> list[str]:
+        # Quarantine, don't requeue: the platform may have accepted the post
+        # before the worker died, and an automatic retry would double-post.
         sql = f"""
             UPDATE {self.TABLE}
-            SET status = 'queued', last_error = 'stale publishing claim reaped'
+            SET status = 'failed', last_error = %s
             WHERE status = 'publishing'
               AND updated_at < now() - make_interval(secs => %s)
             RETURNING id
         """
         with self._conn() as conn, conn.cursor() as cur:
-            cur.execute(sql, (lease_seconds,))
+            cur.execute(sql, (_STALE_CLAIM_ERROR, lease_seconds))
             return [str(r[0]) for r in cur.fetchall()]
 
 

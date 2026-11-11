@@ -347,7 +347,7 @@ def test_webhook_ipv6_target_is_bracketed(monkeypatch):
     assert captured["kw"]["headers"] == {"Host": "example.com:8443"}
 
 
-def test_reaper_requeues_stale_publishing_claims(env_data, monkeypatch):
+def test_reaper_quarantines_stale_publishing_claims(env_data, monkeypatch):
     from api.queue import JsonlQueue
     from scheduler.worker import run_once
 
@@ -377,11 +377,26 @@ def test_reaper_requeues_stale_publishing_claims(env_data, monkeypatch):
     # it reads the same tmp data dir this test set up.
     monkeypatch.setattr(w, "get_queue", qmod.get_queue)
     monkeypatch.setattr(w, "PUBLISHING_LEASE", 900)
-    run_once()  # no adapter for 'x' → the reaped row fails again, but it RUNS
 
+    # Quarantine semantics: the reaped row must land in "failed" with the
+    # verify-before-retry error, and run_once() must NOT re-publish it —
+    # the platform may have accepted the post before the worker died.
+    reaped = q.reap_stale_publishing(900)
+    assert reaped == [stale]
+    quarantined = q.get(stale)
+    assert quarantined["status"] == "failed"
+    assert "verify on the platform before retrying" in quarantined["last_error"]
+    assert quarantined["attempts"] == 0, "quarantine must not burn an attempt"
+
+    run_once()  # must skip the quarantined row entirely
     rows = {r["id"]: r for r in q.list_all()}
-    assert rows[stale]["status"] in {"queued", "dead", "failed"} or \
-        rows[stale]["attempts"] >= 1, "stale claim was not re-queued and retried"
+    assert rows[stale]["status"] == "failed", "quarantined row was re-published"
+    assert rows[stale]["attempts"] == 0
+
+    # Explicit retry() after operator verification re-queues it normally.
+    assert q.retry(stale)
+    assert q.get(stale)["status"] == "queued"
+
     # The fresh claim (2027, far future) must never have been picked up.
     assert rows[fresh]["status"] == "queued"
     assert rows[fresh]["attempts"] == 0
