@@ -1,0 +1,17 @@
+{
+  "category": "general",
+  "targets": ["twitter:default", "bluesky:default"],
+  "scheduled_for": null,
+  "formats": {
+    "twitter_thread": {
+      "tweets": [
+        "Open-Dispatch v0.1 is live. One API to cross-post to Twitter, IG, Telegram, Bluesky and LinkedIn.",
+        "Self-host with one docker compose up. Public repo + cloud option coming."
+      ]
+    },
+    "bluesky_post": {
+      "text": "Open-Dispatch v0.1 — one API for cross-posting. Self-host free, source available."
+    }
+  },
+  "webhook_url": null
+}

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>dev.open-dispatch.macos</string>
+    <key>CFBundleName</key>
+    <string>Open-Dispatch</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.4.0</string>
+    <key>CFBundleVersion</key>
+    <string>4</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026 Matthew Selvam — MIT License</string>
+    <!-- Hides the Dock icon; app lives only in the menu bar -->
+    <key>LSUIElement</key>
+    <true/>
+    <!-- Needed to launch sub-processes (uvicorn, scheduler) -->
+    <key>NSAppleScriptEnabled</key>
+    <false/>
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+</dict>
+</plist>

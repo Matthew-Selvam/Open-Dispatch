@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+if [ -f "/Users/matthewselvam/.open-dispatch/.env" ]; then
+  set -o allexport; source "/Users/matthewselvam/.open-dispatch/.env"; set +o allexport
+fi
+# The wrapper owns the data dir - it wins over any value inside .env, so the
+# CLI and the server always agree on where the queue lives.
+export OPEN_DISPATCH_DATA="/Users/matthewselvam/.open-dispatch"
+exec "dist/build/bundle-prefix/opt/open-dispatch/venv/bin/python" "dist/build/bundle-prefix/opt/open-dispatch/cli.py" "$@"

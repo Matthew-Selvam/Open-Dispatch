@@ -1,0 +1,316 @@
+"""Open-Dispatch MCP Server.
+
+Exposes the Open-Dispatch REST API as MCP tools so AI agents (Claude, Cursor, etc.)
+can post content, check queues, and retry failed jobs via natural language.
+
+Usage:
+  pip install mcp
+  python mcp_server.py                        # stdio transport (Claude Desktop / Cursor)
+  python mcp_server.py --transport sse        # SSE transport (browser / remote)
+
+Claude Desktop config (~/.claude/claude_desktop_config.json):
+  {
+    "mcpServers": {
+      "open-dispatch": {
+        "command": "python",
+        "args": ["/path/to/open-dispatch/mcp_server.py"],
+        "env": { "OPEN_DISPATCH_URL": "http://localhost:8000" }
+      }
+    }
+  }
+
+Env:
+  OPEN_DISPATCH_URL  — base URL of the running API (default: http://localhost:8000)
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from typing import Any
+
+import httpx
+
+# mcp 2.x renamed FastMCP -> MCPServer; support both so the extra works on
+# either major version (pyproject pins mcp>=1.0, which resolves to 2.x today).
+try:
+    from mcp.server.fastmcp import FastMCP  # mcp 1.x
+except ImportError:
+    try:
+        from mcp.server.mcpserver import MCPServer as FastMCP  # mcp 2.x
+    except ImportError:
+        raise SystemExit(
+            "mcp package not installed. Run: pip install mcp\n"
+            "Or: pip install 'open-dispatch[mcp]'"
+        )
+
+BASE_URL = os.getenv("OPEN_DISPATCH_URL", "http://localhost:8000").rstrip("/")
+
+
+def _auth_headers() -> dict[str, str]:
+    """Authorization header for a server running with OPEN_DISPATCH_API_TOKEN.
+
+    Returns {} when the variable is unset or blank, so an unauthenticated
+    server keeps working unchanged.
+    """
+    token = os.environ.get("OPEN_DISPATCH_API_TOKEN", "").strip()
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+def _headers(extra: dict[str, str] | None = None) -> dict[str, str]:
+    merged = {"Accept": "application/json"}
+    merged.update(_auth_headers())
+    if extra:
+        merged.update(extra)
+    return merged
+
+mcp = FastMCP(
+    "open-dispatch",
+    instructions=(
+        "Open-Dispatch is a self-hosted social media cross-poster. "
+        "Use dispatch() to post content to one or many platforms in one call. "
+        "Platforms: twitter, bluesky, instagram, telegram, threads, linkedin, youtube, tiktok, facebook, discord. "
+        "Target syntax: 'platform' or 'platform:account'. "
+        "Use get_queue() to monitor post status, campaign_status() to inspect all platforms for one dispatch, "
+        "cancel_campaign() to stop queued campaign rows, and retry_row() to retry failures."
+    ),
+)
+
+
+def _raise_with_hint(r: Any) -> None:
+    """Re-raise 401/403 with the fix, instead of a bare HTTPStatusError."""
+    if r.status_code in (401, 403):
+        raise RuntimeError(
+            f"Open-Dispatch returned {r.status_code}: the server requires authentication. "
+            "Set OPEN_DISPATCH_API_TOKEN in the environment this MCP server runs in "
+            f"to match the server. (server said: {r.text[:200]})"
+        ) from None
+    r.raise_for_status()
+
+
+def _get(path: str, **params: Any) -> dict:
+    r = httpx.get(f"{BASE_URL}{path}", params=params, headers=_headers(), timeout=15)
+    _raise_with_hint(r)
+    return r.json()
+
+
+def _post(path: str, body: dict | None = None) -> dict:
+    r = httpx.post(f"{BASE_URL}{path}", json=body, headers=_headers(), timeout=30)
+    _raise_with_hint(r)
+    return r.json()
+
+
+def _delete(path: str) -> dict:
+    r = httpx.delete(f"{BASE_URL}{path}", headers=_headers(), timeout=15)
+    _raise_with_hint(r)
+    return r.json()
+
+
+# ── Tools ────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def health() -> str:
+    """Check that Open-Dispatch is running and healthy."""
+    data = _get("/healthz")
+    return f"Open-Dispatch {data.get('version', '')} is {data.get('status', 'unknown')}."
+
+
+@mcp.tool()
+def dispatch(
+    targets: list[str],
+    formats: dict[str, Any],
+    scheduled_for: str | None = None,
+    category: str = "general",
+    webhook_url: str | None = None,
+) -> str:
+    """Post content to one or many social platforms.
+
+    Args:
+        targets: List of platform targets, e.g. ["twitter", "bluesky", "telegram:channel"].
+                 Supported platforms: twitter, bluesky, instagram, telegram, threads,
+                 linkedin, youtube, tiktok, facebook, discord.
+        formats: Dict of format keys → payloads. Each platform needs its own key:
+                 - twitter_thread:   {"tweets": ["text1", "text2"]}
+                 - bluesky_post:     {"text": "..."}
+                 - telegram_message: {"text": "...", "parse_mode": "HTML"}
+                 - instagram_post:   {"caption": "...", "image_url": "https://..."}
+                 - threads_post:     {"text": "..."}
+                 - linkedin_post:    {"text": "..."}
+                 - tiktok_post:      {"video_url": "https://...", "caption": "..."}
+                 - facebook_post:    {"text": "...", "image_url": "https://..."}
+                 - discord_message:  {"content": "...", "embeds": [{...}]}
+        scheduled_for: ISO-8601 datetime to schedule post (omit to post immediately).
+        category: Optional label for grouping posts (default "general").
+        webhook_url: Optional URL to notify when post succeeds or fails.
+
+    Returns:
+        Summary of enqueued rows with their IDs and targets.
+    """
+    body: dict[str, Any] = {"targets": targets, "formats": formats, "category": category}
+    if scheduled_for:
+        body["scheduled_for"] = scheduled_for
+    if webhook_url:
+        body["webhook_url"] = webhook_url
+
+    data = _post("/dispatch", body)
+    rows = data.get("enqueued", [])
+    lines = [f"Enqueued {len(rows)} row(s) — unit {data.get('unit_id', '')}:"]
+    for row in rows:
+        sched = f", scheduled {row['scheduled_for']}" if row.get("scheduled_for") else ""
+        lines.append(f"  • {row['target']}  id={row['id']}{sched}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def get_queue(status: str = "queued") -> str:
+    """List queue rows filtered by status.
+
+    Args:
+        status: One of: queued, publishing, published, failed, dead, canceled.
+                Use 'all' to see everything.
+
+    Returns:
+        A formatted list of queue rows.
+    """
+    params: dict[str, Any] = {} if status == "all" else {"status": status}
+    data = _get("/queue", **params)
+    rows = data.get("rows", [])
+    if not rows:
+        return f"No rows with status '{status}'."
+    lines = [f"{len(rows)} row(s) — status: {status}"]
+    for r in rows[:20]:
+        err = f" ✘ {r['last_error'][:80]}" if r.get("last_error") else ""
+        lines.append(f"  [{r['status']}] {r['platform']}  id={r['id']}{err}")
+    if len(rows) > 20:
+        lines.append(f"  … and {len(rows) - 20} more")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def campaign_status(unit_id: str) -> str:
+    """Show all platform rows for a dispatched campaign."""
+    data = _get(f"/campaign/{unit_id}")
+    rows = data.get("rows", [])
+    lines = [f"Campaign {unit_id}: {len(rows)} row(s)"]
+    for row in rows:
+        lines.append(f"  [{row.get('status')}] {row.get('platform')}  id={row.get('id')}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def cancel_campaign(unit_id: str) -> str:
+    """Cancel all queued rows for a dispatched campaign."""
+    data = _post(f"/campaign/{unit_id}/cancel")
+    return f"Campaign {unit_id}: canceled {data.get('canceled', 0)} row(s)."
+
+
+@mcp.tool()
+def get_row(row_id: str) -> str:
+    """Get detailed info about a single queue row.
+
+    Args:
+        row_id: The queue row ID returned by dispatch().
+    """
+    data = _get(f"/queue/{row_id}")
+    lines = [
+        f"Row {row_id}",
+        f"  status:   {data.get('status')}",
+        f"  platform: {data.get('platform')}",
+        f"  attempts: {data.get('attempts', 0)}",
+        f"  post_id:  {data.get('post_id') or '—'}",
+    ]
+    if data.get("last_error"):
+        lines.append(f"  error:    {data['last_error']}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def retry_row(row_id: str) -> str:
+    """Retry a failed or dead queue row.
+
+    Args:
+        row_id: The queue row ID to retry.
+    """
+    data = _post(f"/queue/{row_id}/retry")
+    return f"Row {row_id} reset to status '{data.get('status', 'queued')}'."
+
+
+@mcp.tool()
+def delete_row(row_id: str) -> str:
+    """Permanently delete a queue row.
+
+    Args:
+        row_id: The queue row ID to delete.
+    """
+    _delete(f"/queue/{row_id}")
+    return f"Row {row_id} deleted."
+
+
+@mcp.tool()
+def adapt_caption(text: str, platforms: list[str]) -> str:
+    """Rewrite a caption for each target platform using AI.
+
+    Uses Ollama → OpenRouter → heuristic fallback (always returns something).
+
+    Args:
+        text: The source caption to adapt.
+        platforms: List of platform names to generate versions for,
+                   e.g. ["twitter", "linkedin", "instagram"].
+
+    Returns:
+        Per-platform captions as formatted text.
+    """
+    data = _post("/ai/adapt", {"text": text, "platforms": platforms})
+    formats = data.get("formats") or {}
+    lines = ["Adapted captions:"]
+    for fmt_key, payload in formats.items():
+        # Show the human-readable text field of each format payload
+        if isinstance(payload, dict):
+            if "tweets" in payload and isinstance(payload["tweets"], list):
+                text_out = "\n".join(str(t) for t in payload["tweets"])
+            else:
+                text_out = str(payload.get("text") or payload.get("caption")
+                               or payload.get("description") or payload)
+        else:
+            text_out = str(payload)
+        lines.append(f"\n{fmt_key}:\n{text_out}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def list_platforms() -> str:
+    """List all supported platforms and their format keys."""
+    platforms = [
+        ("twitter",   "twitter_thread",   "tweets: list[str], media_paths?: list[str]"),
+        ("bluesky",   "bluesky_post",     "text: str, images?: [{path, alt}]"),
+        ("instagram", "instagram_post",   "caption: str, image_url: str"),
+        ("telegram",  "telegram_message", "text: str, photo_path?: str, video_path?: str"),
+        ("threads",   "threads_post",     "text: str, image_url?: str, video_url?: str"),
+        ("linkedin",  "linkedin_post",    "text: str, asset_urn?: str"),
+        ("youtube",   "youtube_short",    "video_path: str, title: str, description?: str"),
+        ("tiktok",    "tiktok_post",      "video_url: str, caption?: str, privacy?: str"),
+        ("facebook",  "facebook_post",    "text: str, image_url?: str, video_url?: str, link?: str"),
+        ("discord",   "discord_message",  "content: str, username?: str, avatar_url?: str, embeds?: list"),
+    ]
+    lines = ["Supported platforms:\n"]
+    for platform, fmt_key, fields in platforms:
+        lines.append(f"  {platform:<12} format key: {fmt_key}")
+        lines.append(f"               fields: {fields}\n")
+    lines.append("Target syntax: 'platform' or 'platform:account'")
+    lines.append("Multi-account: set PLATFORM_FIELD_ACCOUNT env vars (e.g. TWITTER_ACCESS_TOKEN_WORK)")
+    return "\n".join(lines)
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Open-Dispatch MCP Server")
+    parser.add_argument("--transport", choices=["stdio", "sse"], default="stdio")
+    parser.add_argument("--port", type=int, default=8001, help="SSE server port (default 8001)")
+    args = parser.parse_args()
+
+    if args.transport == "sse":
+        mcp.run(transport="sse", port=args.port)
+    else:
+        mcp.run(transport="stdio")

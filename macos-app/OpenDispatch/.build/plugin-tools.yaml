@@ -1,0 +1,66 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "OpenDispatch-arm64-apple-macosx-release.exe": ["<OpenDispatch-arm64-apple-macosx-release.exe>"]
+  "OpenDispatch-arm64-apple-macosx-release.module": ["<OpenDispatch-arm64-apple-macosx-release.module>"]
+  "PackageStructure": ["<PackageStructure>"]
+  "main": ["<OpenDispatch-arm64-apple-macosx-release.exe>","<OpenDispatch-arm64-apple-macosx-release.module>"]
+  "test": ["<OpenDispatch-arm64-apple-macosx-release.exe>","<OpenDispatch-arm64-apple-macosx-release.module>"]
+default: "main"
+nodes:
+  "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+commands:
+  "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/MenuBarView.swift","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/OpenDispatchApp.swift","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/ServerManager.swift","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/SettingsView.swift"]
+    outputs: ["/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/sources"]
+    description: "Write auxiliary file /Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/sources"
+
+  "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/MenuBarView.swift.o","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/OpenDispatchApp.swift.o","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/ServerManager.swift.o","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/SettingsView.swift.o"]
+    outputs: ["/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.product/Objects.LinkFileList"
+
+  "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Library/Developer/CommandLineTools/usr/bin/swiftc"]
+    outputs: ["/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt"
+
+  "<OpenDispatch-arm64-apple-macosx-release.exe>":
+    tool: phony
+    inputs: ["/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch"]
+    outputs: ["<OpenDispatch-arm64-apple-macosx-release.exe>"]
+
+  "<OpenDispatch-arm64-apple-macosx-release.module>":
+    tool: phony
+    inputs: ["/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/MenuBarView.swift.o","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/OpenDispatchApp.swift.o","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/ServerManager.swift.o","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/SettingsView.swift.o","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/Modules/OpenDispatch.swiftmodule"]
+    outputs: ["<OpenDispatch-arm64-apple-macosx-release.module>"]
+
+  "C.OpenDispatch-arm64-apple-macosx-release.exe":
+    tool: shell
+    inputs: ["/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/MenuBarView.swift.o","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/OpenDispatchApp.swift.o","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/ServerManager.swift.o","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/SettingsView.swift.o","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.product/Objects.LinkFileList"]
+    outputs: ["/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch"]
+    description: "Linking ./.build/arm64-apple-macosx/release/OpenDispatch"
+    args: ["/Library/Developer/CommandLineTools/usr/bin/swiftc","-L","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release","-o","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch","-module-name","OpenDispatch","-Xlinker","-no_warn_duplicate_libraries","-emit-executable","-Xlinker","-dead_strip","-Xlinker","-alias","-Xlinker","_OpenDispatch_main","-Xlinker","_main","-Xlinker","-rpath","-Xlinker","@loader_path","@/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.product/Objects.LinkFileList","-Xlinker","-rpath","-Xlinker","/Library/Developer/CommandLineTools/usr/lib/swift-6.2/macosx","-target","arm64-apple-macosx13.0","-I","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-L","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-plugin-path","/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing","-sdk","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-g"]
+
+  "C.OpenDispatch-arm64-apple-macosx-release.module":
+    tool: shell
+    inputs: ["/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/MenuBarView.swift","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/OpenDispatchApp.swift","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/ServerManager.swift","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/SettingsView.swift","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/sources"]
+    outputs: ["/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/MenuBarView.swift.o","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/OpenDispatchApp.swift.o","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/ServerManager.swift.o","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/SettingsView.swift.o","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/Modules/OpenDispatch.swiftmodule"]
+    description: "Compiling Swift Module 'OpenDispatch' (4 sources)"
+    args: ["/Library/Developer/CommandLineTools/usr/bin/swiftc","-module-name","OpenDispatch","-emit-dependencies","-emit-module","-emit-module-path","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/Modules/OpenDispatch.swiftmodule","-output-file-map","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/output-file-map.json","-whole-module-optimization","-num-threads","10","-c","@/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/sources","-I","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/Modules","-target","arm64-apple-macosx13.0","-whole-module-optimization","-num-threads","10","-serialize-diagnostics","-O","-j10","-DSWIFT_PACKAGE","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/ModuleCache","-parseable-output","-Xfrontend","-entry-point-function-name","-Xfrontend","OpenDispatch_main","-swift-version","5","-I","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-L","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-plugin-path","/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing","-sdk","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-g","-Xcc","-isysroot","-Xcc","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-Xcc","-fPIC","-Xcc","-g","-package-name","opendispatch"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Package.swift","/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+

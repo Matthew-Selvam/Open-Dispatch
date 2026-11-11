@@ -1,0 +1,246 @@
+"""Scheduler worker — loops, picks up due rows, calls adapters, retries on failure.
+
+Run alongside the API:
+    python -m scheduler.worker
+or via docker-compose (worker service).
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import random
+import socket
+from urllib.parse import urlparse
+import ipaddress
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+# Same .env contract as api.app: only an explicitly configured data dir is
+# honored, and the process environment always wins (see api/app.py).
+if os.getenv("OPEN_DISPATCH_DATA"):
+    from dotenv import load_dotenv
+    load_dotenv(Path(os.environ["OPEN_DISPATCH_DATA"]).expanduser() / ".env", override=False)
+
+import httpx
+
+from adapters import ADAPTERS
+from adapters.errors import AUTH, PERMANENT, PUBLISHED, clip
+from api.queue import get_queue
+from api.schema import ContentUnit
+from profiles import ProfileStore, profile_env
+
+# Health heartbeat — written every poll loop so /healthz can show worker status.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+HEARTBEAT_PATH = Path(os.getenv("OPEN_DISPATCH_DATA", str(_REPO_ROOT / "data"))) / ".worker_heartbeat"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+# httpx logs every request at INFO with the FULL URL. Telegram puts the bot
+# token in the URL path and Instagram put the access token in the query
+# string, so those lines wrote credentials into the log file. Verified:
+#   INFO httpx: HTTP Request: POST https://api.telegram.org/bot<TOKEN>/sendMessage
+for _noisy in ("httpx", "httpcore", "tweepy", "atproto"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
+log = logging.getLogger("open-dispatch.worker")
+
+POLL_INTERVAL = int(os.getenv("WORKER_POLL_INTERVAL", "5"))
+MAX_ATTEMPTS = int(os.getenv("WORKER_MAX_ATTEMPTS", "3"))
+BACKOFF_BASE = int(os.getenv("WORKER_BACKOFF_BASE", "30"))  # seconds
+# A hard crash mid-publish (SIGKILL, OOM, power loss) leaves the row in
+# "publishing" forever — the try/except around _publish cannot catch it, and
+# retry() only accepts queued/failed/dead. Rows older than this lease are
+# re-queued at the top of every poll loop.
+PUBLISHING_LEASE = int(os.getenv("WORKER_PUBLISHING_LEASE", "900"))
+
+
+def _write_heartbeat() -> None:
+    """Write the current UTC timestamp so /healthz can show worker liveness."""
+    try:
+        HEARTBEAT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        HEARTBEAT_PATH.write_text(datetime.now(tz=timezone.utc).isoformat(), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass  # never crash the worker loop over a heartbeat write
+
+
+def _backoff_seconds(attempts: int) -> int:
+    return BACKOFF_BASE * (2 ** max(0, attempts - 1)) + random.randint(0, 10)
+
+
+def _publish(row: dict) -> tuple[bool, str, str]:
+    platform_key = row.get("platform", "")
+    platform, _, account = platform_key.partition(":")
+    if account == "default":
+        account = None
+    adapter = ADAPTERS.get(platform)
+    if not adapter:
+        return False, "", f"no adapter for platform '{platform}'"
+    unit = ContentUnit.from_dict(row["unit"])
+
+    # Inject profile credentials if the unit references a profile
+    profile_id = unit.profile_id or (row.get("unit") or {}).get("profile_id")
+    profile = ProfileStore().get(profile_id) if profile_id else None
+
+    with profile_env(profile):
+        return adapter.publish(unit, account)
+
+
+def _validated_webhook_target(url: str) -> tuple[str, str] | None:
+    """Resolve the webhook host once and apply the egress policy.
+
+    Returns (ip, port) to connect to, or None when the URL fails policy.
+
+    Resolving here and connecting to the *validated* address closes the
+    DNS-rebinding window: validating the hostname and then letting httpx
+    resolve it again lets an attacker-controlled authoritative nameserver
+    answer the check with a public IP and the actual connection with
+    169.254.169.254 or 127.0.0.1 (TTL 0), exfiltrating publish events and
+    error strings to internal services.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        return None
+    # parsed.port raises ValueError for a malformed port — read it INSIDE the
+    # try, not as a getaddrinfo argument, or the exception escapes run_once
+    # and aborts the whole publishing cycle for that poll.
+    try:
+        port = parsed.port or 443
+        infos = socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
+    except (OSError, ValueError):
+        return None
+    addresses = {ipaddress.ip_address(info[4][0]) for info in infos}
+    if not addresses or any(
+        a.is_private or a.is_loopback or a.is_link_local or a.is_reserved or a.is_unspecified or a.is_multicast
+        for a in addresses
+    ):
+        return None
+    ip = sorted(addresses, key=lambda a: (a.version, str(a)))[0]
+    return str(ip), str(port)
+
+
+def _fire_webhook(url: str, payload: dict) -> None:
+    target = _validated_webhook_target(url)
+    if target is None:
+        log.warning("webhook rejected by egress policy")
+        return
+    ip, port = target
+    port_i = int(port)
+    parsed = urlparse(url)
+    host = parsed.hostname
+    # Connect to the address we validated, while TLS SNI, the Host header and
+    # certificate verification stay pinned to the real hostname. IPv6
+    # addresses must be bracketed in a URL; a non-default port belongs in the
+    # Host header per RFC 7230. If this httpx build cannot pin SNI, fail
+    # closed rather than resolve again.
+    ip_token = f"[{ip}]" if ":" in ip else ip
+    host_header = host if port_i == 443 else f"{host}:{port_i}"
+    pinned = f"https://{ip_token}:{port}{parsed.path}"
+    if parsed.query:
+        pinned += f"?{parsed.query}"
+    try:
+        httpx.post(pinned, json=payload, timeout=10, follow_redirects=False,
+                   headers={"Host": host_header}, extensions={"sni_hostname": host})
+    except TypeError:
+        log.warning("webhook not sent: httpx build lacks sni_hostname pinning; refusing unpinned connection")
+    except Exception as e:  # noqa: BLE001
+        log.warning("webhook failed: %s", e)
+
+
+def run_once() -> int:
+    q = get_queue()
+    # Reap stale "publishing" claims before listing due rows, so a row orphaned
+    # by a crash becomes visible to this same poll instead of waiting a cycle.
+    try:
+        reaped = q.reap_stale_publishing(PUBLISHING_LEASE)
+        if reaped:
+            log.warning("reaped %d stale publishing claim(s): %s",
+                        len(reaped), ", ".join(reaped[:5]))
+    except Exception as e:  # noqa: BLE001
+        log.warning("stale-claim reaper failed: %s", e)
+    now_iso = datetime.now(tz=timezone.utc).isoformat()
+    due = q.list_due(now_iso)
+    if not due:
+        return 0
+    log.info("publishing %d due row(s)", len(due))
+    for row in due:
+        rid = row["id"]
+        if not q.mark_publishing(rid):
+            log.info("skip %s: claim lost", rid)
+            continue
+        try:
+            ok, post_id, err = _publish(row)
+        except Exception as e:  # noqa: BLE001
+            # An adapter that raises used to leave the row stuck in "publishing"
+            # forever: list_due() only returns "queued" rows and nothing reaps
+            # a stuck claim, so the post was silently lost. Any adapter
+            # exception must become a recorded failure.
+            log.exception("adapter raised for %s", rid)
+            ok, post_id, err = False, "", f"retryable: adapter raised {type(e).__name__}: {clip(e)}"
+        webhook = (row.get("unit") or {}).get("webhook_url")
+        if ok:
+            log.info("✓ %s → %s", rid, post_id)
+            committed = q.mark_published(rid, post_id)
+            if committed and webhook:
+                _fire_webhook(webhook, {"event": "published", "id": rid, "post_id": post_id,
+                                        "platform": row["platform"]})
+        else:
+            err = clip(err)
+            cls, _, detail = err.partition(": ")
+            # A post that went out but whose id we could not read must never be
+            # retried — that is how you get duplicate posts.
+            if cls == PUBLISHED:
+                log.error("✘ %s published but unconfirmed: %s", rid, detail)
+                committed = q.mark_published(rid, post_id or "")
+                if committed and webhook:
+                    _fire_webhook(webhook, {"event": "published", "id": rid,
+                                            "post_id": post_id, "unconfirmed": True,
+                                            "platform": row["platform"]})
+                continue
+            # Auth and permanent failures cannot succeed on retry; dead-letter
+            # immediately instead of burning two more attempts and backoffs.
+            non_retryable = cls in (AUTH, PERMANENT)
+            attempts = int(row.get("attempts", 0)) + 1
+            dead = non_retryable or attempts >= MAX_ATTEMPTS
+            log.error("✘ %s (attempt %d): %s", rid, attempts, err)
+            # Compute the backoff up front and hand it to mark_failed, so the
+            # status flip and the reschedule land in one guarded write. Doing it
+            # as a separate _update() afterwards left the row briefly "queued"
+            # with a past scheduled_for, which another worker could claim — the
+            # backoff was silently skipped and the stale reschedule landed on an
+            # already-publishing row.
+            retry_at = None
+            if not dead:
+                backoff = _backoff_seconds(attempts)
+                new_sf = datetime.now(tz=timezone.utc).timestamp() + backoff
+                retry_at = datetime.fromtimestamp(new_sf, tz=timezone.utc).isoformat()
+            committed = q.mark_failed(rid, err, dead=dead, retry_at=retry_at)
+            if non_retryable:
+                log.error("  %s — not retryable, dead-lettered", cls)
+            if committed and not dead:
+                log.info("  retry in %ds", backoff)
+            if committed and webhook:
+                _fire_webhook(webhook, {"event": "failed", "id": rid, "error": err,
+                                        "platform": row["platform"], "dead": dead})
+    return len(due)
+
+
+def main() -> int:
+    log.info("scheduler worker starting (poll=%ds, max_attempts=%d, backoff_base=%d)",
+             POLL_INTERVAL, MAX_ATTEMPTS, BACKOFF_BASE)
+    while True:
+        try:
+            _write_heartbeat()
+            run_once()
+        except KeyboardInterrupt:
+            log.info("interrupted; exiting")
+            return 0
+        except Exception as e:  # noqa: BLE001
+            log.exception("worker loop error: %s", e)
+        time.sleep(POLL_INTERVAL)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

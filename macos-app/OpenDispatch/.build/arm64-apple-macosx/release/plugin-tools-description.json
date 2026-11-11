@@ -1,0 +1,276 @@
+{
+  "builtTestProducts" : [
+
+  ],
+  "copyCommands" : {
+
+  },
+  "explicitTargetDependencyImportCheckingMode" : {
+    "none" : {
+
+    }
+  },
+  "generatedSourceTargetSet" : [
+
+  ],
+  "pluginDescriptions" : [
+
+  ],
+  "swiftCommands" : {
+    "C.OpenDispatch-arm64-apple-macosx-release.module" : {
+      "executable" : "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "fileList" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/sources",
+      "importPath" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/MenuBarView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/OpenDispatchApp.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/ServerManager.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/SettingsView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/sources"
+        }
+      ],
+      "isLibrary" : false,
+      "moduleName" : "OpenDispatch",
+      "moduleOutputPath" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/Modules/OpenDispatch.swiftmodule",
+      "objects" : [
+        "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/MenuBarView.swift.o",
+        "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/OpenDispatchApp.swift.o",
+        "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/ServerManager.swift.o",
+        "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/SettingsView.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx13.0",
+        "-whole-module-optimization",
+        "-num-threads",
+        "10",
+        "-serialize-diagnostics",
+        "-O",
+        "-j10",
+        "-DSWIFT_PACKAGE",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/ModuleCache",
+        "-parseable-output",
+        "-Xfrontend",
+        "-entry-point-function-name",
+        "-Xfrontend",
+        "OpenDispatch_main",
+        "-swift-version",
+        "5",
+        "-I",
+        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-L",
+        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-plugin-path",
+        "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "opendispatch"
+      ],
+      "outputFileMapPath" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/MenuBarView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/OpenDispatchApp.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/ServerManager.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/SettingsView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/Modules/OpenDispatch.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/MenuBarView.swift",
+        "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/OpenDispatchApp.swift",
+        "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/ServerManager.swift",
+        "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/SettingsView.swift"
+      ],
+      "tempsPath" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build",
+      "wholeModuleOptimization" : true
+    }
+  },
+  "swiftFrontendCommands" : {
+
+  },
+  "swiftTargetScanArgs" : {
+    "OpenDispatch" : [
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "-module-name",
+      "OpenDispatch",
+      "-package-name",
+      "opendispatch",
+      "-c",
+      "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/MenuBarView.swift",
+      "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/OpenDispatchApp.swift",
+      "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/ServerManager.swift",
+      "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/SettingsView.swift",
+      "-I",
+      "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/Modules",
+      "-target",
+      "arm64-apple-macosx13.0",
+      "-whole-module-optimization",
+      "-num-threads",
+      "10",
+      "-serialize-diagnostics",
+      "-O",
+      "-j10",
+      "-DSWIFT_PACKAGE",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/ModuleCache",
+      "-parseable-output",
+      "-Xfrontend",
+      "-entry-point-function-name",
+      "-Xfrontend",
+      "OpenDispatch_main",
+      "-swift-version",
+      "5",
+      "-I",
+      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-L",
+      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-plugin-path",
+      "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "opendispatch",
+      "-driver-use-frontend-path",
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+    ]
+  },
+  "targetDependencyMap" : {
+    "OpenDispatch" : [
+
+    ]
+  },
+  "testDiscoveryCommands" : {
+
+  },
+  "testEntryPointCommands" : {
+
+  },
+  "traitConfiguration" : {
+    "default" : {
+
+    }
+  },
+  "writeCommands" : {
+    "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/MenuBarView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/OpenDispatchApp.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/ServerManager.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/SettingsView.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/sources"
+    },
+    "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.product/Objects.LinkFileList" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<link-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/MenuBarView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/OpenDispatchApp.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/ServerManager.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/SettingsView.swift.o"
+        }
+      ],
+      "outputFilePath" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.product/Objects.LinkFileList"
+    },
+    "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt" : {
+      "alwaysOutOfDate" : true,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<swift-get-version>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+        }
+      ],
+      "outputFilePath" : "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "": {
+    "dependencies": "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/OpenDispatch.d",
+    "object": "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/OpenDispatch.o",
+    "swift-dependencies": "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/primary.swiftdeps"
+  },
+  "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/MenuBarView.swift": {
+    "object": "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/MenuBarView.swift.o",
+    "swiftmodule": "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/MenuBarView~partial.swiftmodule",
+    "swift-dependencies": "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/MenuBarView.swiftdeps",
+    "diagnostics": "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/MenuBarView.dia"
+  },
+  "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/OpenDispatchApp.swift": {
+    "object": "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/OpenDispatchApp.swift.o",
+    "swiftmodule": "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/OpenDispatchApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/OpenDispatchApp.swiftdeps",
+    "diagnostics": "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/OpenDispatchApp.dia"
+  },
+  "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/ServerManager.swift": {
+    "object": "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/ServerManager.swift.o",
+    "swiftmodule": "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/ServerManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/ServerManager.swiftdeps",
+    "diagnostics": "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/ServerManager.dia"
+  },
+  "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/Sources/OpenDispatch/SettingsView.swift": {
+    "object": "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/SettingsView.swift.o",
+    "swiftmodule": "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/SettingsView~partial.swiftmodule",
+    "swift-dependencies": "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/SettingsView.swiftdeps",
+    "diagnostics": "/Users/matthewselvam/.deepai-code/projects/open-dispatch/Open-Dispatch/macos-app/OpenDispatch/.build/arm64-apple-macosx/release/OpenDispatch.build/SettingsView.dia"
+  }
+}

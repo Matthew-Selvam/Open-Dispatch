@@ -15,7 +15,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="0.4.0"
+VERSION="0.4.1"
 SIGN_ID=""
 NOTARIZE=false
 

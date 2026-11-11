@@ -1,0 +1,146 @@
+"""Instagram adapter — Graph API publishing of image / video / carousel posts.
+
+Env (per account suffix; uppercase):
+  IG_USER_ID[_<ACCT>], IG_TOKEN[_<ACCT>]
+
+Format key: `instagram_post`
+  caption: str
+  image_url: str (public HTTPS URL)  — for single image
+  video_url: str (public HTTPS URL)  — for reel
+  carousel_image_urls: list[str]     — for carousel (2-10)
+
+Note: Instagram Graph requires media to be at a public URL, not a local path.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import time
+
+import httpx
+
+from adapters.errors import PERMANENT, PUBLISHED, classify, clip, prefix_error
+from api.schema import ContentUnit
+
+log = logging.getLogger("open-dispatch.instagram")
+GRAPH = "https://graph.facebook.com/v21.0"
+MAX_CAROUSEL_ITEMS = 10
+
+
+def _creds(account: str | None) -> tuple[str, str]:
+    suffix = f"_{account.upper()}" if account else ""
+    uid = os.getenv(f"IG_USER_ID{suffix}") or os.getenv("IG_USER_ID", "")
+    tok = os.getenv(f"IG_TOKEN{suffix}") or os.getenv("IG_TOKEN", "")
+    return uid, tok
+
+
+def _wait_for_container(creation_id: str, token: str, timeout: int = 90) -> tuple[bool, str]:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r = httpx.get(f"{GRAPH}/{creation_id}",
+                      headers={"Authorization": f"Bearer {token}"},
+                      timeout=15)
+        if r.status_code >= 400:
+            return False, prefix_error(classify(r.status_code), f"poll: {clip(r.text)}")
+        status = r.json().get("status_code")
+        if status == "FINISHED":
+            return True, ""
+        if status == "ERROR":
+            return False, prefix_error("retryable", f"container ERROR: {clip(r.text)}")
+        time.sleep(3)
+    return False, "container poll timeout"
+
+
+def publish(unit: ContentUnit, account: str | None = None) -> tuple[bool, str, str]:
+    fmt = unit.formats.get("instagram_post") or {}
+    caption = (fmt.get("caption") or "").strip()
+    image_url = fmt.get("image_url")
+    video_url = fmt.get("video_url")
+    carousel = fmt.get("carousel_image_urls") or []
+
+    ig_user_id, token = _creds(account)
+    if not (ig_user_id and token):
+        return False, "", "IG_USER_ID / IG_TOKEN missing"
+
+    try:
+        if carousel:
+            # Instagram allows at most 10 children. Slicing silently published
+            # the post with the wrong images and no error, so reject it instead.
+            if len(carousel) > MAX_CAROUSEL_ITEMS:
+                return False, "", prefix_error(
+                    PERMANENT,
+                    f"carousel_image_urls supports at most {MAX_CAROUSEL_ITEMS} items "
+                    f"(got {len(carousel)})",
+                )
+            children: list[str] = []
+            for url in carousel:
+                r = httpx.post(f"{GRAPH}/{ig_user_id}/media",
+                               data={"image_url": url, "is_carousel_item": "true",
+                                     "access_token": token},
+                               timeout=30)
+                if r.status_code >= 400:
+                    return False, "", prefix_error(classify(r.status_code), f"carousel child: {clip(r.text)}")
+                children.append(r.json()["id"])
+            r = httpx.post(f"{GRAPH}/{ig_user_id}/media",
+                           data={"media_type": "CAROUSEL",
+                                 "children": ",".join(children),
+                                 "caption": caption[:2200],
+                                 "access_token": token},
+                           timeout=30)
+        elif video_url:
+            r = httpx.post(f"{GRAPH}/{ig_user_id}/media",
+                           data={"media_type": "REELS",
+                                 "video_url": video_url,
+                                 "caption": caption[:2200],
+                                 "access_token": token},
+                           timeout=60)
+        elif image_url:
+            r = httpx.post(f"{GRAPH}/{ig_user_id}/media",
+                           data={"image_url": image_url,
+                                 "caption": caption[:2200],
+                                 "access_token": token},
+                           timeout=30)
+        else:
+            return False, "", "instagram_post needs image_url, video_url, or carousel_image_urls"
+
+        if r.status_code >= 400:
+            return False, "", prefix_error(classify(r.status_code), f"container: {clip(r.text)}")
+        creation_id = r.json()["id"]
+
+        ok, err = _wait_for_container(creation_id, token)
+        if not ok:
+            return False, "", err
+
+        # media_publish is the point of no return: the container exists and
+        # the media is FINISHED, so re-running the whole publish would create
+        # a NEW container and double-post. Ambiguous publish-step outcomes
+        # must be classified `published` (never retried); only a clear 4xx is
+        # safe to classify by status.
+        try:
+            r = httpx.post(f"{GRAPH}/{ig_user_id}/media_publish",
+                           data={"creation_id": creation_id, "access_token": token},
+                           timeout=30)
+        except Exception as e:  # noqa: BLE001
+            return False, "", prefix_error(
+                PUBLISHED,
+                f"media_publish network error (creation_id={creation_id}), "
+                f"media may publish, NOT retried: {clip(e)}")
+        if r.status_code >= 500:
+            return False, "", prefix_error(
+                PUBLISHED, f"media_publish HTTP {r.status_code}: {clip(r.text)}")
+        if r.status_code >= 400:
+            return False, "", prefix_error(
+                classify(r.status_code), f"publish: {r.status_code} {clip(r.text)}")
+        # A 200 with no id is published-but-unconfirmed: Meta returns the id on
+        # success, so the media probably went out. The old behaviour (ok=True)
+        # fired a published webhook for a post that does not exist; PERMANENT
+        # dead-lettered a row whose post is likely live. `published` marks the
+        # row done without retrying and flags the webhook payload unconfirmed.
+        pid = r.json().get("id")
+        if not pid:
+            return False, "", prefix_error(
+                PUBLISHED, f"media_publish 200 but no id in response: {clip(r.text)}")
+        return True, str(pid), ""
+    except Exception as e:  # noqa: BLE001
+        return False, "", prefix_error("retryable", f"instagram error: {clip(e)}")

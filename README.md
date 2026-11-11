@@ -119,7 +119,7 @@ Advanced usage:
 ```bash
 bash install.sh \
   --prefix   /opt/open-dispatch \   # install location (default: ~/.local)
-  --version  v0.4.0 \               # specific tag (default: main)
+  --version  v0.4.1 \               # specific tag (default: main)
   --data-dir /var/open-dispatch \   # data / .env location
   --no-service                      # skip auto-start setup
 ```
@@ -174,7 +174,7 @@ Best for Python developers who want to embed Open-Dispatch in an existing codeba
 
 ### 🍎 macOS menubar app
 
-1. Download `Open-Dispatch-0.4.0.dmg` from [GitHub Releases](https://github.com/Matthew-Selvam/Open-Dispatch/releases)
+1. Download `Open-Dispatch-0.4.1.dmg` from [GitHub Releases](https://github.com/Matthew-Selvam/Open-Dispatch/releases)
 2. Drag `Open-Dispatch.app` to `/Applications`
 3. **First launch:** right-click → **Open** → click **Open** in the dialog (unsigned build — bypasses Gatekeeper once)
 4. A status icon appears in your menu bar
@@ -190,7 +190,7 @@ Build it yourself:
 
 ```bash
 bash scripts/make-dmg.sh
-# → dist/Open-Dispatch-0.4.0.dmg
+# → dist/Open-Dispatch-0.4.1.dmg
 
 # With code-signing + notarization:
 bash scripts/make-dmg.sh \

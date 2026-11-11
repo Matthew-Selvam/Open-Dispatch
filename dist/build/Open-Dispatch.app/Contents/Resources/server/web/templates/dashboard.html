@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Open-Dispatch{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Queue</h1>
+    <p class="subtitle">{{ rows|length }} row{{ '' if rows|length == 1 else 's' }} · auto-refresh every 5s</p>
+  </div>
+  <div class="actions">
+    <a href="/compose" class="btn btn-primary">+ Compose</a>
+  </div>
+</div>
+
+<div class="filter-bar">
+  {% set statuses = ['all','queued','publishing','published','failed','dead'] %}
+  {% for s in statuses %}
+    <a href="/{% if s != 'all' %}?status={{ s }}{% endif %}"
+       class="chip {% if filter_status == s or (filter_status is none and s == 'all') %}chip-active{% endif %}">
+      {{ s }}
+      {% if counts[s] is defined %}<span class="chip-count">{{ counts[s] }}</span>{% endif %}
+    </a>
+  {% endfor %}
+</div>
+
+<div id="queue-table"
+     hx-get="/_queue-fragment?status={{ filter_status or '' }}"
+     hx-trigger="every 5s"
+     hx-swap="innerHTML">
+  {% include "_queue_table.html" %}
+</div>
+{% endblock %}
