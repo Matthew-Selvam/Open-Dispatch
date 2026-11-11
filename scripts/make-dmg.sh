@@ -112,6 +112,11 @@ fi
 
 # ── create DMG ────────────────────────────────────────────────────────────────
 rm -f "$DMG_PATH"
+# Stale-artifact contamination: without this, cp -r MERGES the fresh bundle
+# into a previous build's app in staging/ — the DMG silently ships old code
+# (observed: a v0.5.0 RC DMG whose server still reported 0.4.1).
+rm -rf "${STAGING_DIR:?}/${APP_NAME}.app"
+rm -f "${STAGING_DIR:?}/Applications"
 
 if command -v create-dmg &>/dev/null; then
   echo "▶ Building DMG with create-dmg…"
