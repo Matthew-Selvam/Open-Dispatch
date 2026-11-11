@@ -1,0 +1,65 @@
+# Production-oriented Compose example (v0.5.0)
+#
+# Differences from docker-compose.yml (default local):
+#   - NO host port publishing: an authenticated TLS reverse proxy joins the
+#     compose network and is the only path to the API (SEC-1).
+#   - Requires OPEN_DISPATCH_API_TOKEN in .env (generate: openssl rand -hex 32).
+#   - Redis enabled by default (multi-worker durability), still not published.
+#   - External managed Postgres supported via DATABASE_URL in .env — leave
+#     that unset to use the JSONL queue on the shared ./data volume.
+#
+# Usage:
+#   cp .env.example .env   # set OPEN_DISPATCH_API_TOKEN + platform credentials
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Then run your reverse proxy with `networks: [od-prod_default]` (external)
+# or on the host proxying to a loopback-published port added explicitly.
+
+services:
+  api:
+    build: .
+    container_name: open-dispatch-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - OPEN_DISPATCH_DATA=/data
+    # SEC-1: nothing published to the host. The reverse proxy reaches the API
+    # over the compose network (service name `api`, port 8000).
+    expose:
+      - "8000"
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5); sys.exit(0 if r.status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  worker:
+    build: .
+    container_name: open-dispatch-worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - OPEN_DISPATCH_DATA=/data
+    volumes:
+      - ./data:/data
+    depends_on:
+      api:
+        condition: service_healthy
+    command: ["python", "-m", "scheduler.worker"]
+
+  redis:
+    image: redis:7-alpine
+    container_name: open-dispatch-redis
+    restart: unless-stopped
+    # Internal only — the compose network is the only access path. For a
+    # production Redis set a password (REDIS_URL=redis://:pw@redis:6379/0)
+    # and pass --requirepass below; never publish 6379 to the host.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+
+volumes:
+  redis-data:

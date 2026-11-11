@@ -143,6 +143,46 @@ open http://localhost:8000
 docker compose --profile redis up -d
 ```
 
+> **SEC-1 — the API binds to loopback by default.** The compose file maps
+> `127.0.0.1:8000:8000`, so the API is reachable **only from the host
+> machine**. That is deliberate: with `OPEN_DISPATCH_API_TOKEN` unset the API
+> is unauthenticated, and binding all interfaces would let anyone who can
+> reach the host create profiles, queue posts, and read queue content.
+> Set a strong token **and** change the mapping before serving remotely:
+> see [Exposing the API remotely](#exposing-the-api-remotely).
+
+### Exposing the API remotely
+
+The default Compose deployment is loopback-only (see SEC-1 above). To serve
+other machines you need **both** of:
+
+1. **A bearer token.** Generate one and put it in `.env`:
+
+   ```bash
+   OPEN_DISPATCH_API_TOKEN=$(openssl rand -hex 32)
+   ```
+
+2. **A TLS-terminating reverse proxy** (nginx, Caddy, Traefik) in front of
+   the container. Do **not** simply change the port mapping to `"8000:8000"`
+   and expose the raw container — HTTP is plaintext and the API allows CORS-
+   gated browser use. A minimal Caddy example:
+
+   ```
+   dispatch.example.com {
+       reverse_proxy 127.0.0.1:8000
+   }
+   ```
+
+   The proxy must live on the same host as the container (so `127.0.0.1`
+   still applies) or join the compose network directly. Restrict proxy
+   routes to what clients need; the queue/API surface is not designed for
+   anonymous public exposure.
+
+Then change the compose mapping to `"8000:8000"` **or** remove `ports:` and
+let the proxy join the compose network. Verify from the host with
+`ss -tlnp | grep 8000` (Linux) or `lsof -nP -iTCP:8000 -sTCP:LISTEN` (macOS)
+that nothing else is listening on `0.0.0.0`.
+
 Multi-arch image (amd64 + arm64). Non-root `dispatch` user. No compiler tools in the final layer.
 
 ---
@@ -431,6 +471,8 @@ scheduler/worker.py
 ```
 
 - **Queue**: JSONL on disk (default), Redis (`REDIS_URL`), or Postgres (`DATABASE_URL`). All three implement `QueueProtocol` — swap with a single env var, no code changes.
+- **Fail closed**: when `REDIS_URL` or `DATABASE_URL` is set but that backend is unreachable, Open Dispatch raises an explicit error instead of silently falling back to JSONL. The API answers `503 Service Unavailable` with the fix in the response; the worker logs `queue backend unavailable: … — retrying in Ns` and keeps polling. Nothing is ever enqueued to a different store than the one you configured. Unset the env var to deliberately switch to the JSONL queue.
+- **Queue health**: `/healthz` returns `200 {"status": "ok", …}` when the queue works and `503 {"status": "degraded", "queue_error": "…"}` when the API is up but the configured backend is down — a running API and a functioning queue are reported separately.
 - **Retry**: exponential backoff (`WORKER_BACKOFF_BASE × 2^(attempts-1)` + jitter), gives up after `WORKER_MAX_ATTEMPTS`.
 - **State machine**: `queued → publishing → published | failed | dead`
 - **No-cloud option**: everything runs from a single `python` process — `python cli.py worker` alongside `uvicorn`.

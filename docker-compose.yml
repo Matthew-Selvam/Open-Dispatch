@@ -9,8 +9,14 @@ services:
     # their own queue and the ./data volume is never used.
     environment:
       - OPEN_DISPATCH_DATA=/data
+    # SEC-1: bind to loopback only. The API runs unauthenticated when
+    # OPEN_DISPATCH_API_TOKEN is empty, so binding all interfaces by default
+    # exposed create/delete/dispatch to anyone who could reach the host.
+    # To serve remotely, front it with an authenticated reverse proxy (TLS +
+    # bearer auth) or set OPEN_DISPATCH_API_TOKEN and change this to
+    # "8000:8000" explicitly — see README → "Exposing the API remotely".
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./data:/data
     # No `depends_on: redis` — Redis is opt-in via REDIS_URL.
