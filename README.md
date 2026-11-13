@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/open-dispatch-logo.gif" alt="Open Dispatch logo" width="104">
+</p>
+
 # Open-Dispatch
 
 > **One API to dispatch your content anywhere.**
