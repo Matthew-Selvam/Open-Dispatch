@@ -32,7 +32,7 @@ Repository = "https://github.com/Matthew-Selvam/Open-Dispatch"
 "Bug Tracker" = "https://github.com/Matthew-Selvam/Open-Dispatch/issues"
 
 [project.optional-dependencies]
-test = ["pytest>=8", "pytest-asyncio>=0.23"]
+test = ["pytest>=8", "pytest-asyncio>=0.23", "pytest-cov>=5"]
 redis = ["redis>=5.0"]
 postgres = ["psycopg2-binary>=2.9"]
 mcp = ["mcp>=1.0"]  # 1.x FastMCP and 2.x MCPServer both supported
@@ -60,3 +60,6 @@ web = ["templates/*.html", "static/*"]
 testpaths = ["tests"]
 addopts = "-q"
 pythonpath = ["."]
+
+[tool.coverage.run]
+omit = ["build/*", "dist/*", "tests/*"]
