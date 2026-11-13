@@ -621,7 +621,7 @@ Full endpoint reference: [open-dispatch.vercel.app/api-reference](https://open-d
 
 ```bash
 pytest -q
-# 318 tests — schema, queue, API, media, profiles, adapters, and docs coverage — no network, no real credentials
+# Full suite (schema, queue, API, media, profiles, adapters, and docs coverage). See CI for the current count. No credentials required; live integration tests run only when a DSN is provided.
 ```
 
 ---
