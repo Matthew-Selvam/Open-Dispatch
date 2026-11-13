@@ -1,8 +1,6 @@
-<p align="center">
-  <img src="docs/assets/open-dispatch-logo.gif" alt="Open Dispatch logo" width="104">
-</p>
-
-# Open-Dispatch
+<h1 align="left">
+  <img src="docs/assets/open-dispatch-logo.jpg" alt="Open Dispatch logo" width="56" align="center"> Open-Dispatch
+</h1>
 
 > **One API to dispatch your content anywhere.**
 > Twitter / X · Instagram · Telegram · Bluesky · LinkedIn · Threads · YouTube Shorts
