@@ -1,5 +1,5 @@
 <h1 align="left">
-  <img src="docs/assets/open-dispatch-logo.jpg" alt="Open Dispatch logo" width="56" align="center">                 Open-Dispatch
+  <img src="docs/assets/open-dispatch-logo.png" alt="Open Dispatch logo" width="40" height="40" align="middle" style="vertical-align: middle; margin-right: 10px;">Open-Dispatch
 </h1>
 
 > **One API to dispatch your content anywhere.**
