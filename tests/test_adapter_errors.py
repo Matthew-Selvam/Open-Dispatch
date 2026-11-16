@@ -24,9 +24,12 @@ from adapters.errors import (
 # ── redaction ───────────────────────────────────────────────────────────────
 
 def test_redacts_telegram_bot_token_in_url_path() -> None:
-    url = "https://api.telegram.org/bot123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw/sendMessage"
+    # Build a synthetic token at runtime; never commit token-shaped credentials.
+    token = "123456789:" + ("A" * 35)
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
     out = redact(url)
-    assert "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw" not in out
+    assert token not in out
+    assert "bot***" in out
     assert "sendMessage" in out, "the useful part of the URL must survive"
 
 
