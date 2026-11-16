@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+from html.parser import HTMLParser
 
 import pytest
 
@@ -39,6 +40,54 @@ def test_compose_page_renders(client):
     # Every adapter platform shows up as a checkbox
     for p in ["telegram", "twitter", "instagram", "bluesky", "linkedin"]:
         assert f'value="{p}"' in r.text
+
+
+class _IconOnlyControlParser(HTMLParser):
+    """Collect links and buttons whose visible content is only symbols."""
+
+    def __init__(self):
+        super().__init__()
+        self.controls = []
+        self._active = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in {"a", "button"}:
+            self._active.append((tag, dict(attrs), []))
+
+    def handle_data(self, data):
+        for _, _, parts in self._active:
+            parts.append(data)
+
+    def handle_endtag(self, tag):
+        for index in range(len(self._active) - 1, -1, -1):
+            if self._active[index][0] == tag:
+                control_tag, attrs, parts = self._active.pop(index)
+                text = " ".join("".join(parts).split())
+                if text and not any(char.isalnum() for char in text):
+                    self.controls.append((control_tag, text, attrs))
+                return
+
+
+def test_rendered_icon_only_links_and_buttons_have_aria_labels(client):
+    compose = client.get("/compose", headers={"Accept": "text/html"})
+    assert compose.status_code == 200
+
+    submitted = client.post(
+        "/dispatch",
+        json={"targets": ["telegram"], "formats": {"telegram_message": {"text": "done"}}},
+    )
+    assert submitted.status_code == 202
+    row_id = submitted.json()["enqueued"][0]["id"]
+    from api.queue import get_queue
+
+    assert get_queue().mark_published(row_id, "post-123")
+    dashboard = client.get("/", headers={"Accept": "text/html"})
+    assert dashboard.status_code == 200
+
+    parser = _IconOnlyControlParser()
+    parser.feed(compose.text + dashboard.text)
+    assert parser.controls
+    assert all(attrs.get("aria-label", "").strip() for _, _, attrs in parser.controls), parser.controls
 
 
 def test_compose_submit_creates_row(client):
