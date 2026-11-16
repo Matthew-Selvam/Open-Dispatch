@@ -48,6 +48,36 @@ overrides.
 | Facebook Pages | `FACEBOOK_PAGE_ID`, `FACEBOOK_ACCESS_TOKEN` | Generate a replacement Page token with the required Page permissions using the app's configured Meta login flow. Check the token's validity and expiry with Meta's [Access Token Debugger API](https://developers.facebook.com/docs/graph-api/reference/debug_token/). Token type and expiry depend on how it was issued. |
 | Discord | `DISCORD_WEBHOOK_URL` (and optional `DISCORD_WEBHOOK_URL_<ACCOUNT>`) | Create a replacement webhook in the channel's Integrations settings and update the full webhook URL. Treat that URL as a secret: anyone who has it can post to the channel. See [Discord webhook guidance](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks). |
 
+### Token lifetimes
+
+Lifetimes depend on the token type, the app's configuration, and how the token
+was issued. Confirm against the provider's current documentation before you
+plan a rotation schedule.
+
+- **TikTok user access token:** documented as valid for 24 hours. The refresh
+  token is documented as valid for 365 days, but a newer TikTok page gives 180
+  days, so check the [current TikTok OAuth documentation](https://developers.tiktok.com/doc/oauth-user-access-token-management/).
+  Each refresh returns a new refresh token; store it.
+- **LinkedIn access token:** documented as valid for 60 days. A programmatic
+  refresh token, where the app is eligible for one, is documented as valid for
+  365 days from the original authorization. See
+  [LinkedIn's programmatic refresh token guidance](https://learn.microsoft.com/en-us/linkedin/shared/authentication/programmatic-refresh-tokens).
+- **Threads long-lived token:** documented as valid for 60 days. A refresh resets
+  the 60-day period, and a token that expires cannot be refreshed. See
+  [Threads long-lived access tokens](https://developers.facebook.com/docs/threads/get-started/long-lived-tokens/).
+- **Google (YouTube) refresh token:** lifetime depends on the OAuth consent
+  screen's publishing status and on whether the token was revoked. Refresh
+  tokens issued while the app is in Testing status can expire on a short
+  schedule; see [Google's OAuth documentation](https://developers.google.com/youtube/data/guides/authentication).
+- **Facebook Page and Instagram tokens:** lifetime depends on how the token was
+  issued. Long-lived user tokens are documented as lasting about 60 days, and
+  Page tokens derived from them may differ. Check the token's `expires_at` with
+  the [Access Token Debugger API](https://developers.facebook.com/docs/graph-api/reference/debug_token/)
+  instead of assuming a duration.
+- **Twitter / X, Bluesky, Telegram, and Discord:** this guide does not record a
+  timed expiry for these credentials. They remain valid until revoked or
+  regenerated, so follow the provider link in the table above.
+
 ## 3. Recover failed queue rows safely
 
 Replacing a credential does not automatically retry rows already marked
@@ -67,8 +97,10 @@ assuming every credential problem has the same classification.
    automatic duplicate. A stale `publishing` row is quarantined for the same
    reason; verify its outcome on the platform first.
 3. If the post did **not** go out and the credential is fixed, manually retry
-   the row with `dispatch queue retry <row-id>` or the dashboard's **Retry**
-   action. Do not retry a row whose post is already live.
+   the row with the dashboard's **Retry** action, or with the API endpoint
+   `POST /queue/{row_id}/retry` (send the bearer token when
+   `OPEN_DISPATCH_API_TOKEN` is set). The `dispatch queue` CLI only lists rows.
+   Do not retry a row whose post is already live.
 4. Watch the health dashboard or worker logs for the new result. A successful
    retry marks the row published; another authentication failure will need
    further credential or permission investigation.
