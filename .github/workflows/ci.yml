@@ -39,6 +39,10 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-asyncio
 
+      - name: Install coverage tooling
+        if: matrix.python-version == '3.12'
+        run: pip install pytest-cov
+
       - name: Verify package build and contents
         run: |
           python -m pip install build
@@ -74,8 +78,27 @@ jobs:
               print("mcp_server missing-dep error OK:", (r.stderr.strip().splitlines() or [''])[0])
           PY
 
-      - name: Run tests
+      - name: Run tests (Python 3.11)
+        if: matrix.python-version == '3.11'
         run: pytest -q --tb=short
+
+      - name: Run tests with coverage (Python 3.12)
+        if: matrix.python-version == '3.12'
+        run: pytest --cov=. --cov-report=term --cov-report=xml
+
+      - name: Add coverage summary to job summary
+        if: matrix.python-version == '3.12'
+        run: |
+          echo '## Test coverage' >> "$GITHUB_STEP_SUMMARY"
+          coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage XML
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          if-no-files-found: error
 
   # CI-1 part 2: the MCP-enabled installation must be exercised in CI — the
   # 5 bearer-token auth tests in tests/test_client_auth.py are security-
