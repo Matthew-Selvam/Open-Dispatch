@@ -44,7 +44,7 @@ overrides.
 | LinkedIn | `LINKEDIN_ACCESS_TOKEN`, `LINKEDIN_AUTHOR_URN` | Reauthorize through the LinkedIn app's OAuth flow with the required `w_member_social` permission. Follow [LinkedIn's access-token guidance](https://learn.microsoft.com/en-us/linkedin/shared/authentication/programmatic-refresh-tokens); refresh-token availability depends on the app's eligibility. Keep the author URN for the same member or organization. |
 | Threads | `THREADS_USER_ID`, `THREADS_ACCESS_TOKEN` | Obtain a replacement with the required `threads_basic` and `threads_content_publish` permissions using [Threads API token guidance](https://developers.facebook.com/docs/threads/get-started/long-lived-tokens/). This adapter does not refresh the token automatically. |
 | YouTube | `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, `YOUTUBE_REFRESH_TOKEN` | Reauthorize the Google account with the YouTube upload scope and replace the refresh token if it was revoked or invalidated. The adapter exchanges the refresh token for a short-lived access token during each upload. See [YouTube OAuth documentation](https://developers.google.com/youtube/data/guides/authentication). |
-| TikTok | `TIKTOK_ACCESS_TOKEN` | Reauthorize the user through the app's TikTok OAuth flow with `video.publish`, then replace the token. The adapter does not refresh it automatically. See [TikTok user access-token management](https://developers.tiktok.com/doc/oauth-user-access-token-management/). |
+| TikTok | `TIKTOK_ACCESS_TOKEN` | Reauthorize the user through the app's TikTok OAuth flow with `video.publish`, then replace the token. The adapter does not refresh it automatically. See [TikTok user access-token management](https://developers.tiktok.com/docs/en/oauth-user-access-token-management). |
 | Facebook Pages | `FACEBOOK_PAGE_ID`, `FACEBOOK_ACCESS_TOKEN` | Generate a replacement Page token with the required Page permissions using the app's configured Meta login flow. Check the token's validity and expiry with Meta's [Access Token Debugger API](https://developers.facebook.com/docs/graph-api/reference/debug_token/). Token type and expiry depend on how it was issued. |
 | Discord | `DISCORD_WEBHOOK_URL` (and optional `DISCORD_WEBHOOK_URL_<ACCOUNT>`) | Create a replacement webhook in the channel's Integrations settings and update the full webhook URL. Treat that URL as a secret: anyone who has it can post to the channel. See [Discord webhook guidance](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks). |
 
@@ -54,10 +54,14 @@ Lifetimes depend on the token type, the app's configuration, and how the token
 was issued. Confirm against the provider's current documentation before you
 plan a rotation schedule.
 
-- **TikTok user access token:** documented as valid for 24 hours. The refresh
-  token is documented as valid for 365 days, but a newer TikTok page gives 180
-  days, so check the [current TikTok OAuth documentation](https://developers.tiktok.com/doc/oauth-user-access-token-management/).
-  Each refresh returns a new refresh token; store it.
+- **TikTok user access token:** valid for 2 hours; its refresh token is valid
+  for 180 days. TikTok rotates the refresh token on each successful refresh, so
+  the latest value must replace the previous one. This adapter stores only
+  `TIKTOK_ACCESS_TOKEN` and does not refresh it automatically. Open-Dispatch
+  cannot renew TikTok credentials today; the operator must replace the access
+  token when it expires unless a separate process refreshes it and securely
+  updates the stored token. See TikTok's [user access-token management
+  documentation](https://developers.tiktok.com/docs/en/oauth-user-access-token-management).
 - **LinkedIn access token:** documented as valid for 60 days. A programmatic
   refresh token, where the app is eligible for one, is documented as valid for
   365 days from the original authorization. See
@@ -65,10 +69,12 @@ plan a rotation schedule.
 - **Threads long-lived token:** documented as valid for 60 days. A refresh resets
   the 60-day period, and a token that expires cannot be refreshed. See
   [Threads long-lived access tokens](https://developers.facebook.com/docs/threads/get-started/long-lived-tokens/).
-- **Google (YouTube) refresh token:** lifetime depends on the OAuth consent
-  screen's publishing status and on whether the token was revoked. Refresh
-  tokens issued while the app is in Testing status can expire on a short
-  schedule; see [Google's OAuth documentation](https://developers.google.com/youtube/data/guides/authentication).
+- **Google (YouTube) refresh token:** if the external OAuth consent screen is
+  left in **Testing** status, refresh tokens expire after 7 days. The exception
+  for identity-only scopes does not apply to YouTube uploads. In **Production**,
+  refresh tokens can still be revoked and may expire after six months without
+  use. See Google's [OAuth 2.0 refresh-token expiration
+  rules](https://developers.google.com/identity/protocols/oauth2#expiration).
 - **Facebook Page and Instagram tokens:** lifetime depends on how the token was
   issued. Long-lived user tokens are documented as lasting about 60 days, and
   Page tokens derived from them may differ. Check the token's `expires_at` with
