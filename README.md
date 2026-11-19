@@ -250,7 +250,7 @@ cp .env.example .env
 $EDITOR .env
 ```
 
-**Where do I get the API keys?** [`CREDENTIALS_GUIDE.html`](CREDENTIALS_GUIDE.html) walks through all ten platforms one at a time, with the scope each one needs and what to paste where. Open it in a browser. [`.env.example`](.env.example) is the same information as a copy-paste template: Telegram, Twitter / X, Instagram (Graph API, needs public media URLs), Bluesky (App Password, not your login password), LinkedIn (3-legged OAuth with `w_member_social`), Threads (Meta Graph API), YouTube Shorts (Data API v3), TikTok (Content Posting API v2), Facebook (Meta Graph API, Page token), and Discord (webhook, no bot required).
+**Where do I get the API keys?** [`CREDENTIALS_GUIDE.html`](CREDENTIALS_GUIDE.html) walks through all ten platforms one at a time, with the scope each one needs and what to paste where. Open it in a browser. [`.env.example`](.env.example) is the same information as a copy-paste template: Telegram, Twitter / X, Instagram (Graph API, needs public media URLs), Bluesky (App Password, not your login password), LinkedIn (3-legged OAuth with `w_member_social`), Threads (Meta Graph API), YouTube Shorts (Data API v3), TikTok (Content Posting API v2), Facebook (Meta Graph API, Page token), and Discord (webhook, no bot required). For replacing expired or revoked credentials and safely retrying failed queue rows, see the [credential rotation guide](docs/CREDENTIAL_ROTATION.md).
 
 Only fill in the platforms you actually dispatch to. The API does not complain about targets whose env vars are unset.
 
