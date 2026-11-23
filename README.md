@@ -18,7 +18,7 @@ Open-Dispatch is the **infrastructure layer** for content distribution. Like Str
 
 <p align="center">
   <!-- Record a 30s demo (see docs/DEMO_SCRIPT.md) and drop it here as docs/demo.gif -->
-  <img src="docs/demo.gif" alt="Open-Dispatch — compose once, dispatch to every platform" width="760">
+  <img src="docs/demo.gif" alt="Open-Dispatch — compose once, dispatch to multiple destinations" width="760">
 </p>
 
 > ⭐ **If self-hosting your social posting sounds good, [star the repo](https://github.com/Matthew-Selvam/Open-Dispatch) to follow development** — it's the fastest way to support an independent MIT project.
