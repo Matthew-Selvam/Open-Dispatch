@@ -3,7 +3,7 @@
 </h1>
 
 > **One API to dispatch your content anywhere.**
-> Twitter / X · Instagram · Telegram · Bluesky · LinkedIn · Threads · YouTube Shorts
+> Twitter / X · Instagram · Telegram · Bluesky · LinkedIn · Threads · YouTube Shorts · TikTok · Facebook · Discord
 > — self-host forever free · MIT license
 
 <p align="center">
