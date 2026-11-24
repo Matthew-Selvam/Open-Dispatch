@@ -48,8 +48,32 @@ gifsicle -O3 --lossy=80 --colors 128 demo-raw.gif -o docs/demo.gif
 5. Have the Compose text pre-decided so you don't fumble typing on camera.
 
 The worker really publishes to the configured test destinations. Do not fake a
-`published` state. If a recording is ever made with a simulated/mock flow,
-label it clearly as simulated rather than presenting it as a live publish.
+`published` state. If a recording is made with a simulated/mock flow, label it
+clearly as simulated rather than presenting it as a live publish.
+
+### Simulated fallback (queue-only; no Docker or platform credentials needed)
+
+A simulated recording is acceptable when dedicated live test destinations are
+not available. Keep this fallback strictly queue-only:
+
+1. Start the API locally with `uvicorn api.app:app --host 127.0.0.1 --port 8000`.
+   Use a disposable local data directory, and do not configure real platform
+   credentials.
+2. Do **not** start the scheduler worker. The API will accept the dispatch and
+   leave the rows in the real queue as `queued`; no adapter will be called and
+   no platform post will be sent.
+3. Show the composer, submit neutral fictional copy to the selected destinations,
+   then show the resulting queue rows still marked `queued`.
+4. Keep a visible overlay on every frame reading:
+   **SIMULATED — QUEUE ONLY — NO PLATFORM POSTS SENT**.
+5. Do not use a mock adapter that returns success, do not show a `published`
+   status, and do not fabricate a worker heartbeat, publish response, or status
+   transition. A simulated adapter success would be recorded by the real worker
+   as `published`, which would misrepresent what happened.
+
+For this fallback, omit the worker/Health shots in the live shot list below.
+A queue-only recording demonstrates compose and enqueue behaviour; it does not
+claim to demonstrate successful platform publication.
 
 ---
 
